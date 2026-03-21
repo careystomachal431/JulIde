@@ -1,0 +1,57 @@
+import { useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { useIdeStore } from "../../stores/useIdeStore";
+
+export function StatusBar() {
+  const juliaVersion = useIdeStore((s) => s.juliaVersion);
+  const juliaEnv = useIdeStore((s) => s.juliaEnv);
+  const isRunning = useIdeStore((s) => s.isRunning);
+  const debug = useIdeStore((s) => s.debug);
+  const openTabs = useIdeStore((s) => s.openTabs);
+  const activeTabId = useIdeStore((s) => s.activeTabId);
+  const setJuliaVersion = useIdeStore((s) => s.setJuliaVersion);
+  const setAvailableEnvs = useIdeStore((s) => s.setAvailableEnvs);
+
+  const activeTab = openTabs.find((t) => t.id === activeTabId);
+
+  useEffect(() => {
+    invoke<string>("julia_get_version")
+      .then((v) => setJuliaVersion(v))
+      .catch(() => setJuliaVersion("Julia not found"));
+
+    invoke<string[]>("julia_list_environments")
+      .then((envs) => setAvailableEnvs(envs))
+      .catch(() => {});
+  }, [setJuliaVersion, setAvailableEnvs]);
+
+  return (
+    <div className="status-bar">
+      <div className="status-bar-left">
+        <span
+          className={`status-item status-julia ${isRunning ? "running" : ""} ${debug.isDebugging ? "debugging" : ""}`}
+          title={juliaVersion}
+        >
+          {debug.isDebugging ? "🐛 Debugging" : isRunning ? "▶ Running" : `⚡ ${juliaVersion}`}
+        </span>
+        <span className="status-item status-env" title="Julia environment">
+          env: {juliaEnv}
+        </span>
+      </div>
+
+      <div className="status-center">
+        <span className="status-item status-filename">
+          {activeTab ? activeTab.name : "julIDE"}
+        </span>
+      </div>
+
+      <div className="status-bar-right">
+        {activeTab && (
+          <span className="status-item status-language">
+            {activeTab.name.endsWith(".jl") ? "Julia" : "Text"}
+          </span>
+        )}
+        <span className="status-item status-encoding">UTF-8</span>
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,343 @@
+use once_cell::sync::Lazy;
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+
+#[derive(Debug, Default)]
+pub struct JuliaState {
+    pub process_pid: Option<u32>,
+}
+
+pub type SharedJuliaState = Arc<Mutex<JuliaState>>;
+
+pub fn new_julia_state() -> SharedJuliaState {
+    Arc::new(Mutex::new(JuliaState::default()))
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct JuliaOutputEvent {
+    pub kind: String, // "stdout" | "stderr" | "done" | "error"
+    pub text: String,
+    pub exit_code: Option<i32>,
+}
+
+static JULIA_PATH: Lazy<Arc<Mutex<Option<PathBuf>>>> =
+    Lazy::new(|| Arc::new(Mutex::new(None)));
+
+/// Find the Julia executable, trying multiple strategies.
+pub async fn find_julia() -> Option<PathBuf> {
+    let cached = JULIA_PATH.lock().await;
+    if let Some(ref p) = *cached {
+        return Some(p.clone());
+    }
+    drop(cached);
+
+    let found = find_julia_impl();
+
+    if let Some(ref p) = found {
+        let mut cached = JULIA_PATH.lock().await;
+        *cached = Some(p.clone());
+    }
+    found
+}
+
+fn find_julia_impl() -> Option<PathBuf> {
+    // 1. Explicit env var override
+    if let Ok(path) = std::env::var("JULIA_PATH") {
+        let p = PathBuf::from(&path);
+        if p.exists() {
+            return Some(p);
+        }
+    }
+
+    // 2. Login shell PATH lookup (handles juliaup, Homebrew, etc.)
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
+    if let Ok(output) = std::process::Command::new(&shell)
+        .args(["-l", "-c", "which julia"])
+        .output()
+    {
+        if output.status.success() {
+            let path = String::from_utf8_lossy(&output.stdout)
+                .trim()
+                .to_string();
+            let p = PathBuf::from(&path);
+            if p.exists() {
+                return Some(p);
+            }
+        }
+    }
+
+    // 3. juliaup default location
+    if let Ok(home) = std::env::var("HOME") {
+        let p = PathBuf::from(&home).join(".juliaup/bin/julia");
+        if p.exists() {
+            return Some(p);
+        }
+    }
+
+    // 4. Common static paths
+    for candidate in &[
+        "/opt/homebrew/bin/julia",
+        "/usr/local/bin/julia",
+        "/usr/bin/julia",
+    ] {
+        let p = PathBuf::from(candidate);
+        if p.exists() {
+            return Some(p);
+        }
+    }
+
+    // 5. Scan /Applications for Julia*.app
+    if let Ok(entries) = std::fs::read_dir("/Applications") {
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let name_str = name.to_string_lossy();
+            if name_str.starts_with("Julia") && name_str.ends_with(".app") {
+                let bin = entry
+                    .path()
+                    .join("Contents/Resources/julia/bin/julia");
+                if bin.exists() {
+                    return Some(bin);
+                }
+            }
+        }
+    }
+
+    None
+}
+
+#[tauri::command]
+pub async fn julia_get_version() -> Result<String, String> {
+    let julia = find_julia()
+        .await
+        .ok_or_else(|| "Julia not found. Install Julia or set JULIA_PATH.".to_string())?;
+
+    let output = tokio::process::Command::new(&julia)
+        .arg("--version")
+        .output()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+#[tauri::command]
+pub async fn julia_list_environments() -> Result<Vec<String>, String> {
+    let home = std::env::var("HOME").map_err(|e| e.to_string())?;
+    let envs_path = PathBuf::from(&home).join(".julia/environments");
+
+    let mut envs = vec!["@v#.#".to_string()];
+    if let Ok(entries) = std::fs::read_dir(&envs_path) {
+        for entry in entries.flatten() {
+            if entry.path().is_dir() {
+                envs.push(entry.file_name().to_string_lossy().to_string());
+            }
+        }
+    }
+    Ok(envs)
+}
+
+#[tauri::command]
+pub async fn julia_run(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, SharedJuliaState>,
+    file_path: String,
+    project_path: Option<String>,
+) -> Result<(), String> {
+    use tauri::Emitter;
+    use tokio::io::AsyncBufReadExt;
+
+    let julia = find_julia()
+        .await
+        .ok_or_else(|| "Julia not found. Install Julia or set JULIA_PATH.".to_string())?;
+
+    let mut cmd = tokio::process::Command::new(&julia);
+    if let Some(ref proj) = project_path {
+        cmd.arg(format!("--project={}", proj));
+    }
+    cmd.arg(&file_path);
+    cmd.stdout(std::process::Stdio::piped());
+    cmd.stderr(std::process::Stdio::piped());
+    cmd.kill_on_drop(true);
+
+    let mut child = cmd.spawn().map_err(|e| e.to_string())?;
+
+    {
+        let mut lock = state.lock().await;
+        lock.process_pid = child.id();
+    }
+
+    let stdout = child.stdout.take().unwrap();
+    let stderr = child.stderr.take().unwrap();
+    let app_out = app.clone();
+    let app_err = app.clone();
+    let app_done = app.clone();
+    let state_done = state.inner().clone();
+
+    tokio::spawn(async move {
+        let reader = tokio::io::BufReader::new(stdout);
+        let mut lines = reader.lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            let _ = app_out.emit(
+                "julia-output",
+                JuliaOutputEvent {
+                    kind: "stdout".into(),
+                    text: line,
+                    exit_code: None,
+                },
+            );
+        }
+    });
+
+    tokio::spawn(async move {
+        let reader = tokio::io::BufReader::new(stderr);
+        let mut lines = reader.lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            let _ = app_err.emit(
+                "julia-output",
+                JuliaOutputEvent {
+                    kind: "stderr".into(),
+                    text: line,
+                    exit_code: None,
+                },
+            );
+        }
+    });
+
+    tokio::spawn(async move {
+        let status = child.wait().await;
+        let code = status
+            .map(|s| s.code().unwrap_or(-1))
+            .unwrap_or(-1);
+        {
+            let mut lock = state_done.lock().await;
+            lock.process_pid = None;
+        }
+        let _ = app_done.emit(
+            "julia-output",
+            JuliaOutputEvent {
+                kind: "done".into(),
+                text: String::new(),
+                exit_code: Some(code),
+            },
+        );
+    });
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn julia_precompile(
+    app: tauri::AppHandle,
+    project_path: Option<String>,
+) -> Result<(), String> {
+    use tauri::Emitter;
+    use tokio::io::AsyncBufReadExt;
+
+    let julia = find_julia()
+        .await
+        .ok_or_else(|| "Julia not found.".to_string())?;
+
+    let mut cmd = tokio::process::Command::new(&julia);
+    if let Some(ref proj) = project_path {
+        cmd.arg(format!("--project={}", proj));
+    } else {
+        cmd.arg("--project=@.");
+    }
+    cmd.arg("-e").arg("using Pkg; Pkg.precompile()");
+    cmd.stdout(std::process::Stdio::piped());
+    cmd.stderr(std::process::Stdio::piped());
+
+    let mut child = cmd.spawn().map_err(|e| e.to_string())?;
+    let stdout = child.stdout.take().unwrap();
+    let stderr = child.stderr.take().unwrap();
+    let app_out = app.clone();
+    let app_err = app.clone();
+    let app_done = app.clone();
+
+    tokio::spawn(async move {
+        let reader = tokio::io::BufReader::new(stdout);
+        let mut lines = reader.lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            let _ = app_out.emit("julia-output", JuliaOutputEvent { kind: "stdout".into(), text: line, exit_code: None });
+        }
+    });
+
+    tokio::spawn(async move {
+        let reader = tokio::io::BufReader::new(stderr);
+        let mut lines = reader.lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            let _ = app_err.emit("julia-output", JuliaOutputEvent { kind: "stderr".into(), text: line, exit_code: None });
+        }
+    });
+
+    tokio::spawn(async move {
+        let status = child.wait().await;
+        let code = status.map(|s| s.code().unwrap_or(-1)).unwrap_or(-1);
+        let _ = app_done.emit("julia-output", JuliaOutputEvent { kind: "done".into(), text: String::new(), exit_code: Some(code) });
+    });
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn julia_clean(
+    app: tauri::AppHandle,
+    project_path: Option<String>,
+) -> Result<(), String> {
+    use tauri::Emitter;
+
+    let proj = project_path
+        .as_deref()
+        .unwrap_or(".");
+
+    let manifest = format!("{}/Manifest.toml", proj);
+    let mut cleaned = vec![];
+
+    if std::fs::remove_file(&manifest).is_ok() {
+        cleaned.push(manifest.clone());
+    }
+
+    // Remove compiled cache under .julia/compiled/
+    let msg = if cleaned.is_empty() {
+        "Nothing to clean.".to_string()
+    } else {
+        format!("Removed: {}", cleaned.join(", "))
+    };
+
+    let _ = app.emit("julia-output", JuliaOutputEvent { kind: "stdout".into(), text: msg, exit_code: None });
+    let _ = app.emit("julia-output", JuliaOutputEvent { kind: "done".into(), text: String::new(), exit_code: Some(0) });
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn julia_kill(state: tauri::State<'_, SharedJuliaState>) -> Result<(), String> {
+    let lock = state.lock().await;
+    if let Some(pid) = lock.process_pid {
+        #[cfg(unix)]
+        unsafe {
+            libc::kill(pid as i32, libc::SIGTERM);
+        }
+        #[cfg(windows)]
+        {
+            // On Windows use taskkill
+            let _ = std::process::Command::new("taskkill")
+                .args(["/PID", &pid.to_string(), "/F"])
+                .output();
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn julia_set_path(path: String) -> Result<(), String> {
+    let p = PathBuf::from(&path);
+    if !p.exists() {
+        return Err(format!("Path does not exist: {}", path));
+    }
+    let mut cached = JULIA_PATH.lock().await;
+    *cached = Some(p);
+    Ok(())
+}
