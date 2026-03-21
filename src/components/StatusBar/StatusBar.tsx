@@ -1,6 +1,7 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useIdeStore } from "../../stores/useIdeStore";
+import { GitBranch } from "lucide-react";
 
 export function StatusBar() {
   const juliaVersion = useIdeStore((s) => s.juliaVersion);
@@ -17,7 +18,20 @@ export function StatusBar() {
   const setJuliaVersion = useIdeStore((s) => s.setJuliaVersion);
   const setAvailableEnvs = useIdeStore((s) => s.setAvailableEnvs);
 
+  const workspacePath = useIdeStore((s) => s.workspacePath);
   const activeTab = openTabs.find((t) => t.id === activeTabId);
+  const [gitBranch, setGitBranch] = useState("");
+
+  useEffect(() => {
+    if (!workspacePath) { setGitBranch(""); return; }
+    invoke<boolean>("git_is_repo", { workspacePath }).then((isRepo) => {
+      if (isRepo) {
+        invoke<string>("git_branch_current", { workspacePath }).then(setGitBranch).catch(() => setGitBranch(""));
+      } else {
+        setGitBranch("");
+      }
+    }).catch(() => setGitBranch(""));
+  }, [workspacePath]);
 
   useEffect(() => {
     invoke<string>("julia_get_version")
@@ -41,6 +55,11 @@ export function StatusBar() {
         <span className="status-item status-env" title="Julia environment">
           env: {juliaEnv}
         </span>
+        {gitBranch && (
+          <span className="status-item status-git" title={`Git branch: ${gitBranch}`}>
+            <GitBranch size={11} /> {gitBranch}
+          </span>
+        )}
       </div>
 
       <div className="status-center">

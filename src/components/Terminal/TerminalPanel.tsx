@@ -1,168 +1,225 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
+import { Plus, X } from "lucide-react";
 import "@xterm/xterm/css/xterm.css";
 import { useIdeStore } from "../../stores/useIdeStore";
 import type { PtyOutputEvent } from "../../types";
-import { PTY_SESSION_ID } from "../../constants";
 
-const SESSION_ID = PTY_SESSION_ID;
+const XTERM_THEME = {
+  background: "#1a1a1a",
+  foreground: "#cccccc",
+  cursor: "#9558B2",
+  black: "#1e1e1e",
+  red: "#CB3C33",
+  green: "#389826",
+  yellow: "#e5c07b",
+  blue: "#4063D8",
+  magenta: "#9558B2",
+  cyan: "#56b6c2",
+  white: "#cccccc",
+  brightBlack: "#5c6370",
+  brightRed: "#e06c75",
+  brightGreen: "#98c379",
+  brightYellow: "#e5c07b",
+  brightBlue: "#61afef",
+  brightMagenta: "#c678dd",
+  brightCyan: "#56b6c2",
+  brightWhite: "#ffffff",
+};
 
-/** Send `using Revise\n` after a delay to give the REPL time to start. */
-function injectRevise(delayMs = 2500) {
+interface TermInstance {
+  terminal: Terminal;
+  fitAddon: FitAddon;
+  unlisten: (() => void) | null;
+}
+
+let termCounter = 0;
+
+function injectRevise(sessionId: string, delayMs = 2500) {
   setTimeout(() => {
     if (useIdeStore.getState().reviseEnabled) {
-      invoke("pty_write", { sessionId: SESSION_ID, data: "using Revise\n" }).catch(
-        console.error
-      );
+      invoke("pty_write", { sessionId, data: "using Revise\n" }).catch(console.error);
     }
   }, delayMs);
 }
 
 export function TerminalPanel() {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const termRef = useRef<Terminal | null>(null);
-  const fitAddonRef = useRef<FitAddon | null>(null);
-  const cleanupRef = useRef<(() => void) | null>(null);
   const workspacePath = useIdeStore((s) => s.workspacePath);
+  const sessions = useIdeStore((s) => s.terminalSessions);
+  const activeTerminalId = useIdeStore((s) => s.activeTerminalId);
+  const addTerminalSession = useIdeStore((s) => s.addTerminalSession);
+  const removeTerminalSession = useIdeStore((s) => s.removeTerminalSession);
+  const setActiveTerminal = useIdeStore((s) => s.setActiveTerminal);
 
+  const instancesRef = useRef<Map<string, TermInstance>>(new Map());
+  const containerRef = useRef<HTMLDivElement>(null);
+  const initialized = useRef(false);
+
+  // Create initial terminal session on first mount
   useEffect(() => {
-    // If already initialized, just refit (panel became visible again)
-    if (termRef.current && fitAddonRef.current) {
-      setTimeout(() => fitAddonRef.current?.fit(), 0);
-      return;
-    }
+    if (initialized.current) return;
+    initialized.current = true;
+    const id = `terminal-${++termCounter}`;
+    addTerminalSession({ id, name: "Terminal 1" });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Create xterm instances for sessions that don't have one
+  useEffect(() => {
     if (!containerRef.current) return;
 
-    const term = new Terminal({
-      cursorBlink: true,
-      fontSize: 13,
-      fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
-      theme: {
-        background: "#1a1a1a",
-        foreground: "#cccccc",
-        cursor: "#9558B2",
-        black: "#1e1e1e",
-        red: "#CB3C33",
-        green: "#389826",
-        yellow: "#e5c07b",
-        blue: "#4063D8",
-        magenta: "#9558B2",
-        cyan: "#56b6c2",
-        white: "#cccccc",
-        brightBlack: "#5c6370",
-        brightRed: "#e06c75",
-        brightGreen: "#98c379",
-        brightYellow: "#e5c07b",
-        brightBlue: "#61afef",
-        brightMagenta: "#c678dd",
-        brightCyan: "#56b6c2",
-        brightWhite: "#ffffff",
-      },
-    });
+    for (const session of sessions) {
+      if (instancesRef.current.has(session.id)) continue;
 
-    const fitAddon = new FitAddon();
-    term.loadAddon(fitAddon);
-    term.loadAddon(new WebLinksAddon());
-
-    term.open(containerRef.current);
-
-    // Defer fit() so the container has actual pixel dimensions
-    const fitTimer = setTimeout(() => fitAddon.fit(), 50);
-
-    termRef.current = term;
-    fitAddonRef.current = fitAddon;
-
-    // Send keystrokes to PTY
-    term.onData((data) => {
-      invoke("pty_write", { sessionId: SESSION_ID, data }).catch(console.error);
-    });
-
-    let unlistenFn: (() => void) | null = null;
-
-    // Start async setup
-    const setup = async () => {
-      try {
-        await invoke("pty_create", {
-          sessionId: SESSION_ID,
-          juliaPath: null,
-          projectPath: workspacePath ?? null,
-        });
-        injectRevise();
-      } catch (e) {
-        term.writeln(`\x1b[31mFailed to start Julia REPL: ${e}\x1b[0m`);
-        term.writeln(`\x1b[33mMake sure Julia is installed and on your PATH.\x1b[0m`);
-      }
-
-      unlistenFn = await listen<PtyOutputEvent>("pty-output", (event) => {
-        if (event.payload.session_id === SESSION_ID) {
-          term.write(event.payload.data);
-        }
+      const term = new Terminal({
+        cursorBlink: true,
+        fontSize: 13,
+        fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
+        theme: XTERM_THEME,
       });
-    };
 
-    setup();
+      const fitAddon = new FitAddon();
+      term.loadAddon(fitAddon);
+      term.loadAddon(new WebLinksAddon());
 
-    // Resize observer: refit + resize PTY when container dimensions change
+      // Create a wrapper div for this terminal
+      const wrapper = document.createElement("div");
+      wrapper.className = "terminal-instance";
+      wrapper.dataset.sessionId = session.id;
+      wrapper.style.display = session.id === activeTerminalId ? "block" : "none";
+      wrapper.style.width = "100%";
+      wrapper.style.height = "100%";
+      containerRef.current.appendChild(wrapper);
+
+      term.open(wrapper);
+
+      const instance: TermInstance = { terminal: term, fitAddon, unlisten: null };
+      instancesRef.current.set(session.id, instance);
+
+      // Send keystrokes to PTY
+      term.onData((data) => {
+        invoke("pty_write", { sessionId: session.id, data }).catch(console.error);
+      });
+
+      // Start PTY session
+      const sessionId = session.id;
+      const setup = async () => {
+        try {
+          await invoke("pty_create", {
+            sessionId,
+            juliaPath: null,
+            projectPath: workspacePath ?? null,
+          });
+          injectRevise(sessionId);
+        } catch (e) {
+          term.writeln(`\x1b[31mFailed to start Julia REPL: ${e}\x1b[0m`);
+        }
+
+        instance.unlisten = await listen<PtyOutputEvent>("pty-output", (event) => {
+          if (event.payload.session_id === sessionId) {
+            term.write(event.payload.data);
+          }
+        }) as unknown as () => void;
+      };
+
+      setup();
+      setTimeout(() => fitAddon.fit(), 100);
+    }
+  }, [sessions, activeTerminalId, workspacePath]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Show/hide terminals when active tab changes
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const wrappers = containerRef.current.querySelectorAll<HTMLDivElement>(".terminal-instance");
+    wrappers.forEach((w) => {
+      w.style.display = w.dataset.sessionId === activeTerminalId ? "block" : "none";
+    });
+    // Fit the active terminal
+    if (activeTerminalId) {
+      const inst = instancesRef.current.get(activeTerminalId);
+      if (inst) {
+        setTimeout(() => {
+          inst.fitAddon.fit();
+          inst.terminal.focus();
+        }, 50);
+      }
+    }
+  }, [activeTerminalId]);
+
+  // ResizeObserver for all terminals
+  useEffect(() => {
+    if (!containerRef.current) return;
     const observer = new ResizeObserver(() => {
-      fitAddon.fit();
-      invoke("pty_resize", {
-        sessionId: SESSION_ID,
-        rows: term.rows,
-        cols: term.cols,
-      }).catch(() => {});
+      if (activeTerminalId) {
+        const inst = instancesRef.current.get(activeTerminalId);
+        if (inst) {
+          inst.fitAddon.fit();
+          invoke("pty_resize", {
+            sessionId: activeTerminalId,
+            rows: inst.terminal.rows,
+            cols: inst.terminal.cols,
+          }).catch(() => {});
+        }
+      }
     });
     observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, [activeTerminalId]);
 
-    cleanupRef.current = () => {
-      clearTimeout(fitTimer);
-      unlistenFn?.();
-      observer.disconnect();
-      invoke("pty_close", { sessionId: SESSION_ID }).catch(() => {});
-      term.dispose();
-      termRef.current = null;
-      fitAddonRef.current = null;
-    };
+  const addNewTerminal = useCallback(() => {
+    const num = ++termCounter;
+    const id = `terminal-${num}`;
+    addTerminalSession({ id, name: `Terminal ${num}` });
+  }, [addTerminalSession]);
 
-    return () => {
-      // In StrictMode, cleanup runs on the first mount's effect.
-      // We delay actual teardown so StrictMode's second mount can reuse the terminal.
-      const cleanup = cleanupRef.current;
-      setTimeout(() => {
-        // Only actually tear down if no terminal was re-created (i.e. real unmount)
-        if (!termRef.current && cleanup) cleanup();
-      }, 100);
-    };
-  }, []); // Run once on mount — workspacePath handled separately
+  const closeTerminal = useCallback((id: string) => {
+    const inst = instancesRef.current.get(id);
+    if (inst) {
+      inst.unlisten?.();
+      inst.terminal.dispose();
+      instancesRef.current.delete(id);
+      // Remove the DOM wrapper
+      const wrapper = containerRef.current?.querySelector(`[data-session-id="${id}"]`);
+      wrapper?.remove();
+    }
+    invoke("pty_close", { sessionId: id }).catch(() => {});
+    removeTerminalSession(id);
+  }, [removeTerminalSession]);
 
-  // Re-create PTY session when workspace changes (after terminal is up)
-  useEffect(() => {
-    if (!termRef.current || !workspacePath) return;
-    invoke("pty_close", { sessionId: SESSION_ID })
-      .then(() =>
-        invoke("pty_create", {
-          sessionId: SESSION_ID,
-          juliaPath: null,
-          projectPath: workspacePath,
-        })
-      )
-      .then(() => injectRevise())
-      .catch(console.error);
-  }, [workspacePath]);
-
-  // Inject `using Revise` whenever the toggle is turned on mid-session
+  // Inject `using Revise` whenever toggle is turned on
   const reviseEnabled = useIdeStore((s) => s.reviseEnabled);
   useEffect(() => {
-    if (!reviseEnabled || !termRef.current) return;
-    injectRevise(500);
-  }, [reviseEnabled]);
+    if (!reviseEnabled || !activeTerminalId) return;
+    injectRevise(activeTerminalId, 500);
+  }, [reviseEnabled, activeTerminalId]);
 
   return (
     <div className="terminal-panel">
+      <div className="terminal-tabs-bar">
+        {sessions.map((s) => (
+          <div
+            key={s.id}
+            className={`terminal-tab ${s.id === activeTerminalId ? "active" : ""}`}
+            onClick={() => setActiveTerminal(s.id)}
+          >
+            <span className="terminal-tab-name">{s.name}</span>
+            {sessions.length > 1 && (
+              <button
+                className="terminal-tab-close"
+                onClick={(e) => { e.stopPropagation(); closeTerminal(s.id); }}
+              >
+                <X size={10} />
+              </button>
+            )}
+          </div>
+        ))}
+        <button className="terminal-add-btn" onClick={addNewTerminal} title="New Terminal">
+          <Plus size={13} />
+        </button>
+      </div>
       <div ref={containerRef} className="terminal-container" />
     </div>
   );

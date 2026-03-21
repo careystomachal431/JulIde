@@ -73,8 +73,8 @@ function FileTreeNode({ node, depth, onOpen, onRefresh }: FileTreeNodeProps) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [renaming, setRenaming] = useState(false);
   const [newName, setNewName] = useState(node.name);
-  // Inline prompts for new file/folder inside this directory
   const [promptMode, setPromptMode] = useState<"file" | "folder" | null>(null);
+  const [dragOver, setDragOver] = useState(false);
 
   const handleClick = useCallback(() => {
     if (node.is_dir) {
@@ -166,10 +166,39 @@ function FileTreeNode({ node, depth, onOpen, onRefresh }: FileTreeNodeProps) {
   return (
     <>
       <div
-        className="file-tree-node"
+        className={`file-tree-node ${dragOver ? "drag-over" : ""}`}
         style={{ paddingLeft: indentPx }}
+        draggable={!renaming}
         onClick={handleClick}
         onContextMenu={handleContextMenu}
+        onDragStart={(e) => {
+          e.dataTransfer.setData("text/plain", node.path);
+          e.dataTransfer.effectAllowed = "move";
+        }}
+        onDragOver={(e) => {
+          if (node.is_dir) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "move";
+            setDragOver(true);
+          }
+        }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={async (e) => {
+          e.preventDefault();
+          setDragOver(false);
+          if (!node.is_dir) return;
+          const sourcePath = e.dataTransfer.getData("text/plain");
+          if (!sourcePath || sourcePath === node.path) return;
+          const fileName = sourcePath.split(/[/\\]/).pop();
+          const sep = node.path.endsWith("/") ? "" : "/";
+          const newPath = `${node.path}${sep}${fileName}`;
+          try {
+            await invoke("fs_rename", { oldPath: sourcePath, newPath });
+            onRefresh();
+          } catch (err) {
+            console.error("Move failed:", err);
+          }
+        }}
       >
         <span className="file-tree-chevron">
           {node.is_dir ? (

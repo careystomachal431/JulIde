@@ -3,6 +3,8 @@ import Editor, { OnMount, BeforeMount } from "@monaco-editor/react";
 import type * as Monaco from "monaco-editor";
 import { invoke } from "@tauri-apps/api/core";
 import { useIdeStore } from "../../stores/useIdeStore";
+import { useSettingsStore } from "../../stores/useSettingsStore";
+import { themes } from "../../themes/themes";
 import { registerJuliaLanguage } from "./juliaLanguage";
 import { lspClient } from "../../lsp/LspClient";
 import { registerJuliaLspProviders, setMonacoInstance } from "../../lsp/juliaProviders";
@@ -45,6 +47,9 @@ export function MonacoEditor() {
   const toggleBreakpoint = useIdeStore((s) => s.toggleBreakpoint);
   const debug = useIdeStore((s) => s.debug);
 
+  const setEditorInstance = useIdeStore((s) => s.setEditorInstance);
+  const settings = useSettingsStore((s) => s.settings);
+
   const activeTab = openTabs.find((t) => t.id === activeTabId) ?? null;
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -58,42 +63,15 @@ export function MonacoEditor() {
     registerJuliaLanguage(monaco);
     setMonacoInstance(monaco);
     registerJuliaLspProviders(monaco);
-    // Define theme here — beforeMount runs before the editor instance is created,
-    // ensuring the theme exists when theme="julide-dark" is applied.
-    monaco.editor.defineTheme("julide-dark", {
-      base: "vs-dark",
-      inherit: true,
-      rules: [
-        { token: "keyword",       foreground: "9558B2", fontStyle: "bold" },
-        { token: "type.identifier", foreground: "4063D8" },
-        { token: "string",        foreground: "98c379" },
-        { token: "string.symbol", foreground: "e5c07b" },
-        { token: "string.char",   foreground: "98c379" },
-        { token: "string.escape", foreground: "56b6c2" },
-        { token: "comment",       foreground: "5c6370", fontStyle: "italic" },
-        { token: "number",        foreground: "389826" },
-        { token: "number.float",  foreground: "389826" },
-        { token: "number.hex",    foreground: "389826" },
-        { token: "annotation",    foreground: "CB3C33" },
-        { token: "operator",      foreground: "56b6c2" },
-      ],
-      colors: {
-        "editor.background":                "#1e1e1e",
-        "editor.foreground":                "#cccccc",
-        "editor.lineHighlightBackground":   "#2a2d2e",
-        "editor.selectionBackground":       "#3a3d41",
-        "editorCursor.foreground":          "#9558B2",
-        "editorGutter.background":          "#1e1e1e",
-        "editorGlyphMargin.background":     "#1e1e1e",
-        "editorLineNumber.foreground":      "#5a5a5a",
-        "editorLineNumber.activeForeground":"#cccccc",
-        "editor.inactiveSelectionBackground":"#3a3d41",
-      },
-    });
+    // Register all themes from the theme definitions
+    for (const [id, theme] of Object.entries(themes)) {
+      monaco.editor.defineTheme(id, theme.monacoTheme);
+    }
   };
 
   const handleMount: OnMount = (editor, monaco) => {
     editorRef.current = editor;
+    setEditorInstance(editor);
 
     // Breakpoint gutter click
     editor.onMouseDown((e) => {
@@ -261,21 +239,21 @@ export function MonacoEditor() {
         key={activeTab.id}
         language={getLanguage(activeTab.name)}
         value={activeTab.content}
-        theme="julide-dark"
+        theme={settings.theme}
         beforeMount={handleBeforeMount}
         onMount={handleMount}
         onChange={handleChange}
         options={{
-          fontSize: 14,
-          fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
+          fontSize: settings.fontSize,
+          fontFamily: settings.fontFamily,
           fontLigatures: true,
           lineNumbers: "on",
-          minimap: { enabled: true, scale: 1 },
+          minimap: { enabled: settings.minimapEnabled, scale: 1 },
           scrollBeyondLastLine: false,
           automaticLayout: false,
-          tabSize: 4,
+          tabSize: settings.tabSize,
           insertSpaces: true,
-          wordWrap: "off",
+          wordWrap: settings.wordWrap as "off" | "on" | "wordWrapColumn" | "bounded",
           glyphMargin: true,
           folding: true,
           renderLineHighlight: "all",

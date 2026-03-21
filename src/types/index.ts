@@ -79,3 +79,13 @@ export interface DebugOutputEvent {
 export interface DebugVariablesEvent {
   variables: DebugVariable[];
 }
+
+export interface SearchResult {
+  file: string;
+  line: number;
+  col: number;
+  text: string;
+  match_text: string;
+}
+
+export type SidebarView = "files" | "search" | "git";

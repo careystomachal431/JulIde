@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
+import type * as Monaco from "monaco-editor";
 import type {
   ActiveBottomPanel,
   Breakpoint,
@@ -8,6 +9,8 @@ import type {
   FileNode,
   OutputLine,
   Problem,
+  SearchResult,
+  SidebarView,
 } from "../types";
 
 interface IdeStore {
@@ -25,6 +28,12 @@ interface IdeStore {
   setActiveTab: (id: string) => void;
   updateTabContent: (id: string, content: string, isDirty: boolean) => void;
   markTabSaved: (id: string) => void;
+
+  // Split editor
+  splitTabId: string | null;
+  setSplitTab: (id: string | null) => void;
+  splitEditorOpen: boolean;
+  toggleSplitEditor: () => void;
 
   // Julia
   juliaVersion: string;
@@ -55,6 +64,13 @@ interface IdeStore {
   sidebarWidth: number;
   setSidebarWidth: (w: number) => void;
 
+  // Terminal sessions
+  terminalSessions: { id: string; name: string }[];
+  activeTerminalId: string | null;
+  addTerminalSession: (session: { id: string; name: string }) => void;
+  removeTerminalSession: (id: string) => void;
+  setActiveTerminal: (id: string) => void;
+
   // Breakpoints
   breakpoints: Breakpoint[];
   addBreakpoint: (bp: Breakpoint) => void;
@@ -70,9 +86,29 @@ interface IdeStore {
   lspErrorMessage: string | null;
   setLspStatus: (status: "off" | "starting" | "ready" | "error", message?: string) => void;
 
+  // Editor instance (for triggering actions like Find from outside)
+  editorInstance: Monaco.editor.IStandaloneCodeEditor | null;
+  setEditorInstance: (editor: Monaco.editor.IStandaloneCodeEditor | null) => void;
+
   // Command palette
   commandPaletteOpen: boolean;
   setCommandPaletteOpen: (open: boolean) => void;
+
+  // Quick Open
+  quickOpenOpen: boolean;
+  setQuickOpenOpen: (open: boolean) => void;
+
+  // Sidebar view
+  activeSidebarView: SidebarView;
+  setActiveSidebarView: (view: SidebarView) => void;
+
+  // Search
+  searchResults: SearchResult[];
+  searchQuery: string;
+  isSearching: boolean;
+  setSearchResults: (results: SearchResult[]) => void;
+  setSearchQuery: (query: string) => void;
+  setIsSearching: (v: boolean) => void;
 
   // Revise.jl
   reviseEnabled: boolean;
@@ -139,6 +175,25 @@ export const useIdeStore = create<IdeStore>()(
       set((s) => {
         const tab = s.openTabs.find((t) => t.id === id);
         if (tab) tab.isDirty = false;
+      }),
+
+    // Split editor
+    splitTabId: null,
+    splitEditorOpen: false,
+    setSplitTab: (id) =>
+      set((s) => {
+        s.splitTabId = id;
+      }),
+    toggleSplitEditor: () =>
+      set((s) => {
+        s.splitEditorOpen = !s.splitEditorOpen;
+        if (s.splitEditorOpen && !s.splitTabId) {
+          // Default to showing the active tab in the split
+          s.splitTabId = s.activeTabId;
+        }
+        if (!s.splitEditorOpen) {
+          s.splitTabId = null;
+        }
       }),
 
     // Julia
@@ -208,6 +263,26 @@ export const useIdeStore = create<IdeStore>()(
         s.sidebarWidth = w;
       }),
 
+    // Terminal sessions
+    terminalSessions: [],
+    activeTerminalId: null,
+    addTerminalSession: (session) =>
+      set((s) => {
+        s.terminalSessions.push(session);
+        s.activeTerminalId = session.id;
+      }),
+    removeTerminalSession: (id) =>
+      set((s) => {
+        s.terminalSessions = s.terminalSessions.filter((t) => t.id !== id);
+        if (s.activeTerminalId === id) {
+          s.activeTerminalId = s.terminalSessions[0]?.id ?? null;
+        }
+      }),
+    setActiveTerminal: (id) =>
+      set((s) => {
+        s.activeTerminalId = id;
+      }),
+
     // Breakpoints
     breakpoints: [],
     addBreakpoint: (bp) =>
@@ -257,11 +332,50 @@ export const useIdeStore = create<IdeStore>()(
         s.lspErrorMessage = message ?? null;
       }),
 
+    // Editor instance
+    editorInstance: null,
+    setEditorInstance: (editor) =>
+      set((s) => {
+        // Cast to draft-compatible — Immer can't proxy the Monaco editor object
+        s.editorInstance = editor as any;
+      }),
+
     // Command palette
     commandPaletteOpen: false,
     setCommandPaletteOpen: (open) =>
       set((s) => {
         s.commandPaletteOpen = open;
+      }),
+
+    // Quick Open
+    quickOpenOpen: false,
+    setQuickOpenOpen: (open) =>
+      set((s) => {
+        s.quickOpenOpen = open;
+      }),
+
+    // Sidebar view
+    activeSidebarView: "files",
+    setActiveSidebarView: (view) =>
+      set((s) => {
+        s.activeSidebarView = view;
+      }),
+
+    // Search
+    searchResults: [],
+    searchQuery: "",
+    isSearching: false,
+    setSearchResults: (results) =>
+      set((s) => {
+        s.searchResults = results;
+      }),
+    setSearchQuery: (query) =>
+      set((s) => {
+        s.searchQuery = query;
+      }),
+    setIsSearching: (v) =>
+      set((s) => {
+        s.isSearching = v;
       }),
 
     // Revise.jl

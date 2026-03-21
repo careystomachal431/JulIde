@@ -1,15 +1,22 @@
 import { useEffect, useRef, useCallback } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 import { Toolbar } from "./components/Toolbar/Toolbar";
 import { FileExplorer } from "./components/FileExplorer/FileExplorer";
-import { EditorTabs } from "./components/Editor/EditorTabs";
-import { MonacoEditor } from "./components/Editor/MonacoEditor";
+import { EditorSplitContainer } from "./components/Editor/EditorSplitContainer";
 import { OutputPanel } from "./components/OutputPanel/OutputPanel";
 import { TerminalPanel } from "./components/Terminal/TerminalPanel";
 import { DebugPanel } from "./components/Debugger/DebugPanel";
 import { StatusBar } from "./components/StatusBar/StatusBar";
 import { CommandPalette } from "./components/CommandPalette/CommandPalette";
+import { QuickOpen } from "./components/QuickOpen/QuickOpen";
+import { SearchPanel } from "./components/SearchPanel/SearchPanel";
 import { PackageManager } from "./components/PackageManager/PackageManager";
+import { SettingsPanel } from "./components/Settings/SettingsPanel";
+import { ActivityBar } from "./components/ActivityBar/ActivityBar";
+import { GitPanel } from "./components/Git/GitPanel";
+import { WelcomeScreen } from "./components/Welcome/WelcomeScreen";
+import { useSettingsStore } from "./stores/useSettingsStore";
 import { useIdeStore } from "./stores/useIdeStore";
 import { lspClient } from "./lsp/LspClient";
 import { setMonacoMarkers } from "./lsp/juliaProviders";
@@ -39,10 +46,65 @@ export default function App() {
   const debug = useIdeStore((s) => s.debug);
 
   const workspacePath = useIdeStore((s) => s.workspacePath);
+  const activeSidebarView = useIdeStore((s) => s.activeSidebarView);
+  const setActiveSidebarView = useIdeStore((s) => s.setActiveSidebarView);
   const setLspStatus = useIdeStore((s) => s.setLspStatus);
+  const loadSettings = useSettingsStore((s) => s.loadSettings);
+
+  // Load settings on mount
+  useEffect(() => {
+    loadSettings();
+  }, [loadSettings]);
   const setProblems = useIdeStore((s) => s.setProblems);
   const setPlutoStatus = useIdeStore((s) => s.setPlutoStatus);
+  const setFileTree = useIdeStore((s) => s.setFileTree);
   const getProblems = () => useIdeStore.getState().problems;
+
+  // File watcher: start when workspace opens
+  useEffect(() => {
+    if (!workspacePath) return;
+    invoke("watcher_start", { workspacePath }).catch(console.error);
+    return () => {
+      invoke("watcher_stop").catch(console.error);
+    };
+  }, [workspacePath]);
+
+  // Handle fs-changed events: refresh tree, reload open file content
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+    listen<{ path: string; kind: string }>("fs-changed", (e) => {
+      // Debounce tree refresh (many events can fire rapidly)
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(async () => {
+        const wp = useIdeStore.getState().workspacePath;
+        if (!wp) return;
+        try {
+          const tree = await invoke<import("./types").FileNode>("fs_get_tree", { path: wp });
+          setFileTree(tree);
+        } catch { /* ignore */ }
+      }, 500);
+
+      // Reload open file if modified externally and not dirty
+      if (e.payload.kind === "modify") {
+        const state = useIdeStore.getState();
+        const tab = state.openTabs.find((t) => t.path === e.payload.path);
+        if (tab && !tab.isDirty) {
+          invoke<string>("fs_read_file", { path: tab.path }).then((content) => {
+            if (content !== tab.content) {
+              state.updateTabContent(tab.id, content, false);
+            }
+          }).catch(() => {});
+        }
+      }
+    }).then((fn) => { unlisten = fn; });
+
+    return () => {
+      unlisten?.();
+      if (debounceTimer) clearTimeout(debounceTimer);
+    };
+  }, [setFileTree]);
 
   // LSP lifecycle: start when workspace opens, stop when it closes
   useEffect(() => {
@@ -118,17 +180,22 @@ export default function App() {
   const dragStartXRef = useRef(0);
   const dragStartWRef = useRef(0);
 
-  // Keyboard shortcut: Ctrl+` for terminal
+  // Keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === "`") {
         e.preventDefault();
         setActiveBottomPanel("terminal");
       }
+      // Cmd/Ctrl+Shift+F for global search
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "F") {
+        e.preventDefault();
+        setActiveSidebarView("search");
+      }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [setActiveBottomPanel]);
+  }, [setActiveBottomPanel, setActiveSidebarView]);
 
   const onBottomDragStart = useCallback((e: React.MouseEvent) => {
     isDraggingBottomRef.current = true;
@@ -175,9 +242,12 @@ export default function App() {
 
   const panels: PanelId[] = ["output", "terminal", "problems", "debug", "packages"];
 
+  const currentTheme = useSettingsStore((s) => s.settings.theme);
+  const themeClass = currentTheme === "julide-light" ? "theme-light" : "theme-dark";
+
   return (
     <div
-      className="ide-root"
+      className={`ide-root ${themeClass}`}
       style={{ "--sidebar-width": `${sidebarWidth}px` } as React.CSSProperties}
     >
       {/* Toolbar spans full width */}
@@ -185,27 +255,31 @@ export default function App() {
         <Toolbar />
       </div>
 
+      {/* Activity Bar */}
+      <ActivityBar />
+
       {/* Sidebar */}
       <div className="ide-sidebar" style={{ width: sidebarWidth }}>
-        <FileExplorer />
+        {activeSidebarView === "files" && <FileExplorer />}
+        {activeSidebarView === "search" && <SearchPanel />}
+        {activeSidebarView === "git" && <GitPanel />}
       </div>
 
       {/* Sidebar resize handle */}
       <div
         className="sidebar-resize-handle"
-        style={{ left: sidebarWidth }}
+        style={{ left: `calc(48px + ${sidebarWidth}px)` }}
         onMouseDown={onSidebarDragStart}
       />
 
       {/* Main content area */}
       <div className="ide-main">
-        {/* Tab bar */}
-        <EditorTabs />
-
-        {/* Editor */}
-        <div className="ide-editor-area">
-          <MonacoEditor />
-        </div>
+        {/* Editor or Welcome Screen */}
+        {!workspacePath && useIdeStore.getState().openTabs.length === 0 ? (
+          <WelcomeScreen />
+        ) : (
+          <EditorSplitContainer />
+        )}
 
         {/* Bottom panel resize handle */}
         <div
@@ -247,8 +321,10 @@ export default function App() {
         <StatusBar />
       </div>
 
-      {/* Command palette overlay */}
+      {/* Overlays */}
       <CommandPalette />
+      <QuickOpen />
+      <SettingsPanel />
     </div>
   );
 }

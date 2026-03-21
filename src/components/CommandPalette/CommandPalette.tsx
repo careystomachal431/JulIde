@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useIdeStore } from "../../stores/useIdeStore";
+import { useSettingsStore } from "../../stores/useSettingsStore";
 import type { FileNode } from "../../types";
 
 interface Command {
@@ -29,6 +30,12 @@ export function CommandPalette() {
 
   const activeTab = openTabs.find((t) => t.id === activeTabId);
 
+  const editorInstance = useIdeStore((s) => s.editorInstance);
+  const setQuickOpenOpen = useIdeStore((s) => s.setQuickOpenOpen);
+  const setActiveSidebarView = useIdeStore((s) => s.setActiveSidebarView);
+  const setSettingsOpen = useSettingsStore((s) => s.setSettingsOpen);
+  const toggleSplitEditor = useIdeStore((s) => s.toggleSplitEditor);
+
   const commands: Command[] = [
     {
       id: "file.open-folder",
@@ -40,6 +47,41 @@ export function CommandPalette() {
         const tree = await invoke<FileNode>("fs_get_tree", { path });
         setWorkspace(path, tree);
       },
+    },
+    {
+      id: "file.quick-open",
+      label: "Go to File",
+      shortcut: "⌘P",
+      action: () => setQuickOpenOpen(true),
+    },
+    {
+      id: "edit.find",
+      label: "Find in File",
+      shortcut: "⌘F",
+      action: () => editorInstance?.getAction("actions.find")?.run(),
+    },
+    {
+      id: "edit.find-replace",
+      label: "Find and Replace",
+      shortcut: "⌘H",
+      action: () => editorInstance?.getAction("editor.action.startFindReplaceAction")?.run(),
+    },
+    {
+      id: "search.global",
+      label: "Search in Files",
+      shortcut: "⌘⇧F",
+      action: () => setActiveSidebarView("search"),
+    },
+    {
+      id: "settings.open",
+      label: "Open Settings",
+      shortcut: "⌘,",
+      action: () => setSettingsOpen(true),
+    },
+    {
+      id: "editor.split",
+      label: "Toggle Split Editor",
+      action: () => toggleSplitEditor(),
     },
     {
       id: "julia.run",

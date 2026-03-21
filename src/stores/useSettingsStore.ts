@@ -1,0 +1,74 @@
+import { create } from "zustand";
+import { immer } from "zustand/middleware/immer";
+import { invoke } from "@tauri-apps/api/core";
+
+export interface Settings {
+  fontSize: number;
+  fontFamily: string;
+  tabSize: number;
+  minimapEnabled: boolean;
+  wordWrap: string;
+  autoSave: boolean;
+  theme: string;
+  terminalFontSize: number;
+  recentWorkspaces: string[];
+}
+
+interface SettingsStore {
+  settings: Settings;
+  loaded: boolean;
+  settingsOpen: boolean;
+  setSettingsOpen: (open: boolean) => void;
+  loadSettings: () => Promise<void>;
+  updateSettings: (partial: Partial<Settings>) => Promise<void>;
+}
+
+const defaultSettings: Settings = {
+  fontSize: 14,
+  fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
+  tabSize: 4,
+  minimapEnabled: true,
+  wordWrap: "off",
+  autoSave: true,
+  theme: "julide-dark",
+  terminalFontSize: 13,
+  recentWorkspaces: [],
+};
+
+export const useSettingsStore = create<SettingsStore>()(
+  immer((set, get) => ({
+    settings: { ...defaultSettings },
+    loaded: false,
+    settingsOpen: false,
+    setSettingsOpen: (open) =>
+      set((s) => {
+        s.settingsOpen = open;
+      }),
+    loadSettings: async () => {
+      try {
+        const settings = await invoke<Settings>("settings_load");
+        set((s) => {
+          s.settings = { ...defaultSettings, ...settings };
+          s.loaded = true;
+        });
+      } catch (e) {
+        console.error("Failed to load settings:", e);
+        set((s) => {
+          s.loaded = true;
+        });
+      }
+    },
+    updateSettings: async (partial) => {
+      const current = get().settings;
+      const updated = { ...current, ...partial };
+      set((s) => {
+        Object.assign(s.settings, partial);
+      });
+      try {
+        await invoke("settings_save", { settings: updated });
+      } catch (e) {
+        console.error("Failed to save settings:", e);
+      }
+    },
+  }))
+);

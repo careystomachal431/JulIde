@@ -365,6 +365,24 @@ class LspClient {
       },
     });
   }
+
+  async getWorkspaceSymbols(query: string): Promise<any[] | null> {
+    if (!this._isReady) return null;
+
+    return invoke<any[] | null>("lsp_send_request", {
+      method: "workspace/symbol",
+      params: { query },
+    });
+  }
+
+  async getDocumentSymbols(uri: string): Promise<any[] | null> {
+    if (!this._isReady || !this._openDocuments.has(uri)) return null;
+
+    return invoke<any[] | null>("lsp_send_request", {
+      method: "textDocument/documentSymbol",
+      params: { textDocument: { uri } },
+    });
+  }
 }
 
 // Module-level singleton — one client for the app lifetime

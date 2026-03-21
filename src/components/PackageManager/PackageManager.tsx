@@ -62,15 +62,31 @@ export function PackageManager() {
 
   const addPackage = async () => {
     if (!newPkg.trim()) return;
+    const name = newPkg.trim();
     setLoading(true);
-    setPkgOutput([`Adding ${newPkg}...`]);
+    setPkgOutput([`Adding ${name}...`]);
     setNewPkg("");
-    // We invoke julia with Pkg.add
     try {
-      setPkgOutput([`Note: Run 'using Pkg; Pkg.add("${newPkg}")' in the REPL to add packages.`]);
-    } catch {
-      // no-op
-    } finally {
+      await invoke("julia_pkg_add", {
+        packageName: name,
+        projectPath: workspacePath ?? null,
+      });
+    } catch (e) {
+      setPkgOutput((prev) => [...prev, `Error: ${e}`]);
+      setLoading(false);
+    }
+  };
+
+  const removePackage = async (name: string) => {
+    setLoading(true);
+    setPkgOutput([`Removing ${name}...`]);
+    try {
+      await invoke("julia_pkg_rm", {
+        packageName: name,
+        projectPath: workspacePath ?? null,
+      });
+    } catch (e) {
+      setPkgOutput((prev) => [...prev, `Error: ${e}`]);
       setLoading(false);
     }
   };
@@ -120,9 +136,8 @@ export function PackageManager() {
               <button
                 className="pkg-remove"
                 title={`Remove ${pkg.name}`}
-                onClick={() => {
-                  setPkgOutput([`To remove: use Pkg.rm("${pkg.name}") in REPL`]);
-                }}
+                onClick={() => removePackage(pkg.name)}
+                disabled={loading}
               >
                 <Trash2 size={12} />
               </button>

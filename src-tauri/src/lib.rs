@@ -1,9 +1,13 @@
 mod debugger;
 mod fs;
+mod git;
 mod julia;
 mod lsp;
 mod pluto;
 mod pty;
+mod search;
+mod settings;
+mod watcher;
 
 use julia::new_julia_state;
 
@@ -36,6 +40,8 @@ pub fn run() {
             julia::julia_clean,
             julia::julia_kill,
             julia::julia_set_path,
+            julia::julia_pkg_add,
+            julia::julia_pkg_rm,
             // PTY / Terminal
             pty::pty_create,
             pty::pty_write,
@@ -61,6 +67,26 @@ pub fn run() {
             // Pluto
             pluto::pluto_open,
             pluto::pluto_stop,
+            // Search
+            search::fs_search_files,
+            // File watcher
+            watcher::watcher_start,
+            watcher::watcher_stop,
+            // Settings
+            settings::settings_load,
+            settings::settings_save,
+            settings::settings_add_recent_workspace,
+            // Git
+            git::git_is_repo,
+            git::git_branch_current,
+            git::git_branches,
+            git::git_status,
+            git::git_diff,
+            git::git_stage,
+            git::git_unstage,
+            git::git_commit,
+            git::git_log,
+            git::git_checkout_branch,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
