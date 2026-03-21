@@ -1,6 +1,7 @@
 mod debugger;
 mod fs;
 mod julia;
+mod lsp;
 mod pty;
 
 use julia::new_julia_state;
@@ -50,6 +51,12 @@ pub fn run() {
             debugger::debug_remove_breakpoint,
             debugger::debug_get_breakpoints,
             debugger::debug_get_variables,
+            // LSP
+            lsp::lsp_start,
+            lsp::lsp_stop,
+            lsp::lsp_send_request,
+            lsp::lsp_send_notification,
+            lsp::lsp_send_response,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

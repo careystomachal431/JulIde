@@ -1,4 +1,5 @@
 import { useEffect, useRef, useCallback } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { Toolbar } from "./components/Toolbar/Toolbar";
 import { FileExplorer } from "./components/FileExplorer/FileExplorer";
 import { EditorTabs } from "./components/Editor/EditorTabs";
@@ -10,6 +11,10 @@ import { StatusBar } from "./components/StatusBar/StatusBar";
 import { CommandPalette } from "./components/CommandPalette/CommandPalette";
 import { PackageManager } from "./components/PackageManager/PackageManager";
 import { useIdeStore } from "./stores/useIdeStore";
+import { lspClient } from "./lsp/LspClient";
+import { setMonacoMarkers } from "./lsp/juliaProviders";
+import type { LspPublishDiagnosticsParams } from "./lsp/LspClient";
+import type { Problem } from "./types";
 import "./App.css";
 
 
@@ -32,6 +37,62 @@ export default function App() {
   const setSidebarWidth = useIdeStore((s) => s.setSidebarWidth);
   const problems = useIdeStore((s) => s.problems);
   const debug = useIdeStore((s) => s.debug);
+
+  const workspacePath = useIdeStore((s) => s.workspacePath);
+  const setLspStatus = useIdeStore((s) => s.setLspStatus);
+  const setProblems = useIdeStore((s) => s.setProblems);
+  const getProblems = () => useIdeStore.getState().problems;
+
+  // LSP lifecycle: start when workspace opens, stop when it closes
+  useEffect(() => {
+    if (!workspacePath) return;
+    lspClient.start(workspacePath).catch((e: unknown) => {
+      const msg = e instanceof Error ? e.message : String(e);
+      setLspStatus("error", msg);
+    });
+    return () => {
+      lspClient.stop().catch(console.error);
+    };
+  }, [workspacePath]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Mirror Rust lsp-status events into the store
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    listen<{ status: string; message?: string }>("lsp-status", (e) => {
+      setLspStatus(
+        e.payload.status as "off" | "starting" | "ready" | "error",
+        e.payload.message
+      );
+    }).then((fn) => {
+      unlisten = fn;
+    });
+    return () => {
+      unlisten?.();
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Route LSP publishDiagnostics notifications to the store and Monaco markers
+  useEffect(() => {
+    const unsubscribe = lspClient.onNotification((method, params) => {
+      if (method !== "textDocument/publishDiagnostics") return;
+      const { uri, diagnostics } = params as LspPublishDiagnosticsParams;
+      const filePath = uri.replace(/^file:\/\//, "");
+
+      const otherProblems = getProblems().filter((p) => p.file !== filePath);
+      const newProblems: Problem[] = diagnostics.map((d, i) => ({
+        id: `lsp-${filePath}-${i}`,
+        file: filePath,
+        line: d.range.start.line + 1,
+        col: d.range.start.character + 1,
+        severity:
+          d.severity === 1 ? "error" : d.severity === 2 ? "warning" : "info",
+        message: d.message,
+      }));
+      setProblems([...otherProblems, ...newProblems]);
+      setMonacoMarkers(uri, diagnostics);
+    });
+    return unsubscribe;
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const isDraggingBottomRef = useRef(false);
   const isDraggingSidebarRef = useRef(false);

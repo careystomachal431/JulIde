@@ -9,6 +9,8 @@ export function StatusBar() {
   const debug = useIdeStore((s) => s.debug);
   const openTabs = useIdeStore((s) => s.openTabs);
   const activeTabId = useIdeStore((s) => s.activeTabId);
+  const lspStatus = useIdeStore((s) => s.lspStatus);
+  const lspErrorMessage = useIdeStore((s) => s.lspErrorMessage);
   const setJuliaVersion = useIdeStore((s) => s.setJuliaVersion);
   const setAvailableEnvs = useIdeStore((s) => s.setAvailableEnvs);
 
@@ -51,6 +53,22 @@ export function StatusBar() {
           </span>
         )}
         <span className="status-item status-encoding">UTF-8</span>
+        <span
+          className={`status-item status-lsp status-lsp-${lspStatus}`}
+          title={
+            lspStatus === "error"
+              ? (lspErrorMessage ?? "LSP error")
+              : `Julia LSP: ${lspStatus}`
+          }
+        >
+          {lspStatus === "off"
+            ? "LSP"
+            : lspStatus === "starting"
+            ? "LSP…"
+            : lspStatus === "ready"
+            ? "LSP ●"
+            : "LSP ✕"}
+        </span>
       </div>
     </div>
   );

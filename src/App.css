@@ -854,6 +854,10 @@ button, input, select {
 .status-filename { font-weight: 600; color: white; }
 .status-language { color: rgba(255,255,255,0.7); }
 .status-encoding { color: rgba(255,255,255,0.6); }
+.status-lsp { color: rgba(255,255,255,0.5); cursor: default; }
+.status-lsp-starting { color: #d7ba7d; }
+.status-lsp-ready    { color: #389826; }
+.status-lsp-error    { color: #CB3C33; }
 
 /* =========================================================
    COMMAND PALETTE

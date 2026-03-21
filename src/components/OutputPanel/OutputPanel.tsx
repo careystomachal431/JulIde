@@ -43,14 +43,6 @@ export function OutputPanel() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [output]);
 
-  const parseErrors = (text: string) => {
-    // Basic Julia error pattern: "ERROR: LoadError: ... at file.jl:10"
-    const errorPattern = /ERROR:|Error|error/;
-    if (errorPattern.test(text)) {
-      // Could parse and add to problems panel — simplified for now
-    }
-  };
-
   return (
     <div className="output-panel">
       <div className="output-toolbar">

@@ -65,6 +65,11 @@ interface IdeStore {
   debug: DebugState;
   setDebugState: (state: Partial<DebugState>) => void;
 
+  // LSP
+  lspStatus: "off" | "starting" | "ready" | "error";
+  lspErrorMessage: string | null;
+  setLspStatus: (status: "off" | "starting" | "ready" | "error", message?: string) => void;
+
   // Command palette
   commandPaletteOpen: boolean;
   setCommandPaletteOpen: (open: boolean) => void;
@@ -232,6 +237,15 @@ export const useIdeStore = create<IdeStore>()(
     setDebugState: (partial) =>
       set((s) => {
         Object.assign(s.debug, partial);
+      }),
+
+    // LSP
+    lspStatus: "off",
+    lspErrorMessage: null,
+    setLspStatus: (status, message) =>
+      set((s) => {
+        s.lspStatus = status;
+        s.lspErrorMessage = message ?? null;
       }),
 
     // Command palette

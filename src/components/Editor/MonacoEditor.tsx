@@ -4,6 +4,8 @@ import type * as Monaco from "monaco-editor";
 import { invoke } from "@tauri-apps/api/core";
 import { useIdeStore } from "../../stores/useIdeStore";
 import { registerJuliaLanguage } from "./juliaLanguage";
+import { lspClient } from "../../lsp/LspClient";
+import { registerJuliaLspProviders, setMonacoInstance } from "../../lsp/juliaProviders";
 
 const SAVE_DEBOUNCE_MS = 800;
 
@@ -45,12 +47,16 @@ export function MonacoEditor() {
   const activeTab = openTabs.find((t) => t.id === activeTabId) ?? null;
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lspChangeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lspVersionRef = useRef<Map<string, number>>(new Map());
   const decorationsRef = useRef<Monaco.editor.IEditorDecorationsCollection | null>(null);
   const debugDecoRef = useRef<Monaco.editor.IEditorDecorationsCollection | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   const handleBeforeMount: BeforeMount = (monaco) => {
     registerJuliaLanguage(monaco);
+    setMonacoInstance(monaco);
+    registerJuliaLspProviders(monaco);
     // Define theme here — beforeMount runs before the editor instance is created,
     // ensuring the theme exists when theme="julide-dark" is applied.
     monaco.editor.defineTheme("julide-dark", {
@@ -133,6 +139,18 @@ export function MonacoEditor() {
     [markTabSaved]
   );
 
+  // LSP: notify server when a Julia file is opened or closed
+  useEffect(() => {
+    if (!activeTab?.path.endsWith(".jl")) return;
+    const uri = `file://${activeTab.path}`;
+    // Reset version counter for this URI on open
+    lspVersionRef.current.set(uri, 1);
+    lspClient.didOpen(uri, activeTab.content).catch(console.error);
+    return () => {
+      lspClient.didClose(uri).catch(console.error);
+    };
+  }, [activeTab?.path]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Update breakpoint decorations whenever breakpoints or active file changes
   useEffect(() => {
     const editor = editorRef.current;
@@ -195,6 +213,17 @@ export function MonacoEditor() {
       saveTimerRef.current = setTimeout(() => {
         saveFile(activeTab.id, activeTab.path, value);
       }, SAVE_DEBOUNCE_MS);
+
+      // LSP: notify server of content change (300ms debounce)
+      if (activeTab.path.endsWith(".jl")) {
+        if (lspChangeTimerRef.current) clearTimeout(lspChangeTimerRef.current);
+        lspChangeTimerRef.current = setTimeout(() => {
+          const uri = `file://${activeTab.path}`;
+          const v = (lspVersionRef.current.get(uri) ?? 1) + 1;
+          lspVersionRef.current.set(uri, v);
+          lspClient.didChange(uri, value, v).catch(console.error);
+        }, 300);
+      }
     },
     [activeTab, updateTabContent, saveFile]
   );

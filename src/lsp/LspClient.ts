@@ -1,0 +1,371 @@
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+
+// ── LSP types (minimal subset we actually use) ────────────────────────────────
+
+export interface LspPosition {
+  line: number;
+  character: number;
+}
+
+export interface LspRange {
+  start: LspPosition;
+  end: LspPosition;
+}
+
+export interface LspDiagnostic {
+  range: LspRange;
+  severity?: 1 | 2 | 3 | 4; // Error=1, Warning=2, Info=3, Hint=4
+  message: string;
+  source?: string;
+}
+
+export interface LspPublishDiagnosticsParams {
+  uri: string;
+  diagnostics: LspDiagnostic[];
+}
+
+export interface LspCompletionItem {
+  label: string;
+  kind?: number;
+  detail?: string;
+  documentation?: string | { kind: string; value: string };
+  insertText?: string;
+  insertTextFormat?: 1 | 2; // 1=PlainText, 2=Snippet
+}
+
+export interface LspCompletionList {
+  isIncomplete: boolean;
+  items: LspCompletionItem[];
+}
+
+export interface LspHover {
+  contents:
+    | string
+    | { kind: string; value: string }
+    | Array<string | { language: string; value: string }>;
+  range?: LspRange;
+}
+
+export interface LspLocation {
+  uri: string;
+  range: LspRange;
+}
+
+export interface LspSignatureHelp {
+  signatures: Array<{
+    label: string;
+    documentation?: string | { kind: string; value: string };
+    parameters?: Array<{
+      label: string | [number, number];
+      documentation?: string | { kind: string; value: string };
+    }>;
+  }>;
+  activeSignature?: number;
+  activeParameter?: number;
+}
+
+// ── Notification handler type ─────────────────────────────────────────────────
+
+export type LspNotificationHandler = (method: string, params: unknown) => void;
+
+// ── LspClient class ───────────────────────────────────────────────────────────
+
+class LspClient {
+  private notificationUnlisten: (() => void) | null = null;
+  private notificationHandlers: LspNotificationHandler[] = [];
+  private rootUri = "";
+
+  /**
+   * Whether initialization is complete and the server is ready to receive
+   * document sync notifications and language feature requests.
+   * Before this is true, didOpen/didChange/getCompletions etc. are no-ops.
+   */
+  private _isReady = false;
+
+  /**
+   * URIs that LS.jl has been told are open (via textDocument/didOpen).
+   * Used to prevent duplicate didOpen and to gate didChange/didClose.
+   */
+  private _openDocuments = new Set<string>();
+
+  /**
+   * Documents opened before LSP was ready. Flushed once _isReady = true.
+   */
+  private _pendingOpens = new Map<string, string>(); // uri → text
+
+  get isReady(): boolean {
+    return this._isReady;
+  }
+
+  // ── Lifecycle ──────────────────────────────────────────────────────────────
+
+  /** Start the LSP server and run the initialize handshake. */
+  async start(workspacePath: string): Promise<void> {
+    this._isReady = false;
+    this._openDocuments.clear();
+    this._pendingOpens.clear();
+    this.rootUri = `file://${workspacePath}`;
+
+    await invoke("lsp_start", { workspacePath });
+    await this.listenForNotifications();
+    await this.initialize(workspacePath);
+
+    // Fully initialized — mark ready then flush any queued opens
+    this._isReady = true;
+    for (const [uri, text] of this._pendingOpens) {
+      await this._sendDidOpen(uri, text);
+    }
+    this._pendingOpens.clear();
+  }
+
+  /** Stop the LSP server and reset all state. */
+  async stop(): Promise<void> {
+    this._isReady = false;
+    this._openDocuments.clear();
+    this._pendingOpens.clear();
+    this.notificationUnlisten?.();
+    this.notificationUnlisten = null;
+    await invoke("lsp_stop");
+  }
+
+  /**
+   * Register a handler for LSP push notifications (e.g. publishDiagnostics).
+   * Returns an unlisten function.
+   */
+  onNotification(handler: LspNotificationHandler): () => void {
+    this.notificationHandlers.push(handler);
+    return () => {
+      this.notificationHandlers = this.notificationHandlers.filter(
+        (h) => h !== handler
+      );
+    };
+  }
+
+  private async listenForNotifications(): Promise<void> {
+    this.notificationUnlisten?.();
+    this.notificationUnlisten = await listen<Record<string, unknown>>(
+      "lsp-notification",
+      (event) => {
+        const msg = event.payload;
+        const method = msg["method"] as string | undefined;
+        const params = msg["params"];
+        const id = msg["id"];
+
+        // Server-initiated request (has both id and method) — must respond
+        if (id !== undefined && id !== null && method !== undefined) {
+          this.handleServerRequest(id, method, params).catch(console.error);
+          return;
+        }
+
+        // Regular push notification (no id)
+        if (method) {
+          for (const handler of this.notificationHandlers) {
+            handler(method, params);
+          }
+        }
+      }
+    );
+  }
+
+  /**
+   * Respond to server-initiated LSP requests.
+   * LanguageServer.jl crashes if these go unanswered.
+   */
+  private async handleServerRequest(
+    id: unknown,
+    method: string,
+    params: unknown
+  ): Promise<void> {
+    let result: unknown = null;
+
+    if (method === "workspace/configuration") {
+      // Respond with null for each requested config item (use defaults)
+      const items = (params as { items?: unknown[] })?.items ?? [];
+      result = items.map(() => null);
+    }
+    // window/workDoneProgress/create, client/registerCapability,
+    // workspace/semanticTokens/refresh, workspace/inlayHint/refresh, etc.
+    // all expect null as an acknowledgment.
+
+    await invoke("lsp_send_response", { id, result });
+  }
+
+  // ── LSP initialization handshake ─────────────────────────────────────────────
+
+  private async initialize(workspacePath: string): Promise<void> {
+    const workspaceName = workspacePath.split("/").pop() ?? "workspace";
+    await invoke("lsp_send_request", {
+      method: "initialize",
+      params: {
+        processId: null,
+        rootUri: this.rootUri,
+        capabilities: {
+          textDocument: {
+            completion: {
+              completionItem: {
+                snippetSupport: true,
+                documentationFormat: ["markdown", "plaintext"],
+              },
+            },
+            hover: { contentFormat: ["markdown", "plaintext"] },
+            definition: {},
+            signatureHelp: {
+              signatureInformation: {
+                documentationFormat: ["markdown", "plaintext"],
+                parameterInformation: { labelOffsetSupport: true },
+              },
+            },
+            publishDiagnostics: { relatedInformation: false },
+          },
+        },
+        initializationOptions: null,
+        workspaceFolders: [{ uri: this.rootUri, name: workspaceName }],
+      },
+    });
+
+    // Send initialized notification (required by LSP spec after initialize response)
+    await invoke("lsp_send_notification", {
+      method: "initialized",
+      params: {},
+    });
+  }
+
+  // ── Document synchronization ─────────────────────────────────────────────────
+
+  /**
+   * Notify LS.jl that a document was opened.
+   * If LSP is not yet ready, queues the open for when it becomes ready.
+   * Deduplicates — safe to call multiple times for the same URI.
+   */
+  async didOpen(uri: string, text: string): Promise<void> {
+    // Prevent duplicate opens (LS.jl errors on duplicate didOpen)
+    if (this._openDocuments.has(uri)) return;
+
+    if (!this._isReady) {
+      // Queue: will be flushed after initialize handshake completes
+      this._pendingOpens.set(uri, text);
+      return;
+    }
+
+    await this._sendDidOpen(uri, text);
+  }
+
+  private async _sendDidOpen(uri: string, text: string): Promise<void> {
+    await invoke("lsp_send_notification", {
+      method: "textDocument/didOpen",
+      params: {
+        textDocument: { uri, languageId: "julia", version: 1, text },
+      },
+    });
+    this._openDocuments.add(uri);
+  }
+
+  /**
+   * Notify LS.jl of a content change.
+   * No-op if LSP is not ready or the document was never opened.
+   */
+  async didChange(uri: string, text: string, version: number): Promise<void> {
+    if (!this._isReady || !this._openDocuments.has(uri)) return;
+
+    await invoke("lsp_send_notification", {
+      method: "textDocument/didChange",
+      params: {
+        textDocument: { uri, version },
+        contentChanges: [{ text }],
+      },
+    });
+  }
+
+  /**
+   * Notify LS.jl that a document was closed.
+   * Also removes it from the pending-open queue.
+   */
+  async didClose(uri: string): Promise<void> {
+    // If it was queued but never opened on the server, just discard
+    this._pendingOpens.delete(uri);
+    if (!this._openDocuments.has(uri)) return;
+
+    await invoke("lsp_send_notification", {
+      method: "textDocument/didClose",
+      params: { textDocument: { uri } },
+    });
+    this._openDocuments.delete(uri);
+  }
+
+  // ── Language features ─────────────────────────────────────────────────────────
+
+  async getCompletions(
+    uri: string,
+    line: number,
+    character: number
+  ): Promise<LspCompletionItem[]> {
+    if (!this._isReady || !this._openDocuments.has(uri)) return [];
+
+    const result = await invoke<LspCompletionList | LspCompletionItem[] | null>(
+      "lsp_send_request",
+      {
+        method: "textDocument/completion",
+        params: {
+          textDocument: { uri },
+          position: { line, character },
+          context: { triggerKind: 1 },
+        },
+      }
+    );
+    if (!result) return [];
+    if (Array.isArray(result)) return result;
+    return result.items ?? [];
+  }
+
+  async getHover(
+    uri: string,
+    line: number,
+    character: number
+  ): Promise<LspHover | null> {
+    if (!this._isReady || !this._openDocuments.has(uri)) return null;
+
+    return invoke<LspHover | null>("lsp_send_request", {
+      method: "textDocument/hover",
+      params: { textDocument: { uri }, position: { line, character } },
+    });
+  }
+
+  async getDefinition(
+    uri: string,
+    line: number,
+    character: number
+  ): Promise<LspLocation[]> {
+    if (!this._isReady || !this._openDocuments.has(uri)) return [];
+
+    const result = await invoke<LspLocation | LspLocation[] | null>(
+      "lsp_send_request",
+      {
+        method: "textDocument/definition",
+        params: { textDocument: { uri }, position: { line, character } },
+      }
+    );
+    if (!result) return [];
+    return Array.isArray(result) ? result : [result];
+  }
+
+  async getSignatureHelp(
+    uri: string,
+    line: number,
+    character: number
+  ): Promise<LspSignatureHelp | null> {
+    if (!this._isReady || !this._openDocuments.has(uri)) return null;
+
+    return invoke<LspSignatureHelp | null>("lsp_send_request", {
+      method: "textDocument/signatureHelp",
+      params: {
+        textDocument: { uri },
+        position: { line, character },
+        context: { triggerKind: 1 },
+      },
+    });
+  }
+}
+
+// Module-level singleton — one client for the app lifetime
+export const lspClient = new LspClient();
