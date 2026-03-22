@@ -242,3 +242,340 @@ pub fn git_checkout_branch(workspace_path: String, branch: String) -> Result<(),
         .map_err(|e| e.to_string())?;
     Ok(())
 }
+
+// ─── New structs ────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize)]
+pub struct GitRemote {
+    pub name: String,
+    pub url: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct GitStash {
+    pub index: usize,
+    pub message: String,
+}
+
+// ─── New commands ───────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn git_remotes(workspace_path: String) -> Result<Vec<GitRemote>, String> {
+    let repo = open_repo(&workspace_path)?;
+    let remote_names = repo.remotes().map_err(|e| e.to_string())?;
+    let mut remotes = Vec::new();
+    for name in remote_names.iter() {
+        if let Some(name) = name {
+            let remote = repo.find_remote(name).map_err(|e| e.to_string())?;
+            let url = remote.url().unwrap_or("").to_string();
+            remotes.push(GitRemote {
+                name: name.to_string(),
+                url,
+            });
+        }
+    }
+    Ok(remotes)
+}
+
+#[tauri::command]
+pub fn git_remote_url(workspace_path: String, remote: String) -> Result<String, String> {
+    let repo = open_repo(&workspace_path)?;
+    let r = repo
+        .find_remote(&remote)
+        .map_err(|e| format!("Remote '{}' not found: {}", remote, e))?;
+    Ok(r.url().unwrap_or("").to_string())
+}
+
+#[tauri::command]
+pub fn git_branch_create(
+    workspace_path: String,
+    name: String,
+    checkout: bool,
+) -> Result<(), String> {
+    let repo = open_repo(&workspace_path)?;
+    let head = repo.head().map_err(|e| e.to_string())?;
+    let commit = head.peel_to_commit().map_err(|e| e.to_string())?;
+    repo.branch(&name, &commit, false)
+        .map_err(|e| format!("Failed to create branch: {}", e))?;
+    if checkout {
+        let obj = repo
+            .revparse_single(&format!("refs/heads/{}", name))
+            .map_err(|e| e.to_string())?;
+        repo.checkout_tree(&obj, None).map_err(|e| e.to_string())?;
+        repo.set_head(&format!("refs/heads/{}", name))
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn git_branch_delete(workspace_path: String, name: String) -> Result<(), String> {
+    let repo = open_repo(&workspace_path)?;
+    let mut branch = repo
+        .find_branch(&name, git2::BranchType::Local)
+        .map_err(|e| format!("Branch '{}' not found: {}", name, e))?;
+    branch.delete().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn git_merge(workspace_path: String, branch: String) -> Result<(), String> {
+    let repo = open_repo(&workspace_path)?;
+
+    let reference = repo
+        .find_branch(&branch, git2::BranchType::Local)
+        .map_err(|e| format!("Branch '{}' not found: {}", branch, e))?;
+    let annotated = repo
+        .reference_to_annotated_commit(reference.get())
+        .map_err(|e| e.to_string())?;
+
+    let (analysis, _pref) = repo.merge_analysis(&[&annotated]).map_err(|e| e.to_string())?;
+
+    if analysis.is_up_to_date() {
+        return Ok(());
+    }
+
+    if analysis.is_fast_forward() {
+        // Fast-forward
+        let target_oid = annotated.id();
+        let mut head_ref = repo.head().map_err(|e| e.to_string())?;
+        head_ref
+            .set_target(target_oid, &format!("Fast-forward to {}", branch))
+            .map_err(|e| e.to_string())?;
+        repo.checkout_head(Some(git2::build::CheckoutBuilder::new().force()))
+            .map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+
+    if analysis.is_normal() {
+        // Normal merge
+        repo.merge(&[&annotated], None, None)
+            .map_err(|e| e.to_string())?;
+
+        // Check for conflicts
+        let index = repo.index().map_err(|e| e.to_string())?;
+        if index.has_conflicts() {
+            return Err("Merge resulted in conflicts. Please resolve them manually.".to_string());
+        }
+
+        // Create merge commit
+        let mut index = repo.index().map_err(|e| e.to_string())?;
+        let tree_oid = index.write_tree().map_err(|e| e.to_string())?;
+        let tree = repo.find_tree(tree_oid).map_err(|e| e.to_string())?;
+        let sig = repo
+            .signature()
+            .map_err(|e| format!("Git signature not configured: {}", e))?;
+        let head_commit = repo
+            .head()
+            .map_err(|e| e.to_string())?
+            .peel_to_commit()
+            .map_err(|e| e.to_string())?;
+        let merge_commit = repo
+            .find_commit(annotated.id())
+            .map_err(|e| e.to_string())?;
+
+        repo.commit(
+            Some("HEAD"),
+            &sig,
+            &sig,
+            &format!("Merge branch '{}'", branch),
+            &tree,
+            &[&head_commit, &merge_commit],
+        )
+        .map_err(|e| e.to_string())?;
+
+        // Clean up merge state
+        repo.cleanup_state().map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+
+    Err("Merge not possible".to_string())
+}
+
+#[tauri::command]
+pub fn git_stash_save(workspace_path: String, message: String) -> Result<(), String> {
+    let mut repo = open_repo(&workspace_path)?;
+    let sig = repo
+        .signature()
+        .map_err(|e| format!("Git signature not configured: {}", e))?;
+    repo.stash_save(&sig, &message, None)
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn git_stash_list(workspace_path: String) -> Result<Vec<GitStash>, String> {
+    let mut repo = open_repo(&workspace_path)?;
+    let mut stashes = Vec::new();
+    repo.stash_foreach(|index, message, _oid| {
+        stashes.push(GitStash {
+            index,
+            message: message.to_string(),
+        });
+        true
+    })
+    .map_err(|e| e.to_string())?;
+    Ok(stashes)
+}
+
+#[tauri::command]
+pub fn git_stash_pop(workspace_path: String, index: usize) -> Result<(), String> {
+    let mut repo = open_repo(&workspace_path)?;
+    repo.stash_pop(index, None).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Build credential callbacks for fetch/push/pull operations
+fn make_remote_callbacks<'a>() -> git2::RemoteCallbacks<'a> {
+    let mut callbacks = git2::RemoteCallbacks::new();
+    callbacks.credentials(|url, username_from_url, allowed_types| {
+        // Try SSH agent first
+        if allowed_types.contains(git2::CredentialType::SSH_KEY) {
+            if let Some(username) = username_from_url {
+                return git2::Cred::ssh_key_from_agent(username);
+            }
+        }
+        // Try stored token for HTTPS
+        if allowed_types.contains(git2::CredentialType::USER_PASS_PLAINTEXT) {
+            if let Some(token) = crate::git_auth::get_stored_token_for_remote(url) {
+                let user = username_from_url.unwrap_or("git");
+                return git2::Cred::userpass_plaintext(user, &token);
+            }
+        }
+        // Fallback to default credentials
+        git2::Cred::default()
+    });
+    callbacks
+}
+
+#[tauri::command]
+pub fn git_fetch(workspace_path: String, remote: String) -> Result<(), String> {
+    let repo = open_repo(&workspace_path)?;
+    let mut rem = repo
+        .find_remote(&remote)
+        .map_err(|e| format!("Remote '{}' not found: {}", remote, e))?;
+    let callbacks = make_remote_callbacks();
+    let mut opts = git2::FetchOptions::new();
+    opts.remote_callbacks(callbacks);
+    rem.fetch(&[] as &[&str], Some(&mut opts), None)
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn git_push(workspace_path: String, remote: String, branch: String) -> Result<(), String> {
+    let repo = open_repo(&workspace_path)?;
+    let mut rem = repo
+        .find_remote(&remote)
+        .map_err(|e| format!("Remote '{}' not found: {}", remote, e))?;
+    let callbacks = make_remote_callbacks();
+    let mut opts = git2::PushOptions::new();
+    opts.remote_callbacks(callbacks);
+    let refspec = format!("refs/heads/{}:refs/heads/{}", branch, branch);
+    rem.push(&[&refspec], Some(&mut opts))
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn git_pull(workspace_path: String, remote: String, branch: String) -> Result<(), String> {
+    // Fetch first
+    git_fetch(workspace_path.clone(), remote.clone())?;
+
+    let repo = open_repo(&workspace_path)?;
+
+    // Find the fetched reference
+    let fetch_head = repo
+        .find_reference(&format!("refs/remotes/{}/{}", remote, branch))
+        .map_err(|e| format!("Remote branch '{}/{}' not found: {}", remote, branch, e))?;
+    let annotated = repo
+        .reference_to_annotated_commit(&fetch_head)
+        .map_err(|e| e.to_string())?;
+
+    let (analysis, _pref) = repo.merge_analysis(&[&annotated]).map_err(|e| e.to_string())?;
+
+    if analysis.is_up_to_date() {
+        return Ok(());
+    }
+
+    if analysis.is_fast_forward() {
+        let target_oid = annotated.id();
+        let mut head_ref = repo.head().map_err(|e| e.to_string())?;
+        head_ref
+            .set_target(target_oid, &format!("Pull fast-forward from {}/{}", remote, branch))
+            .map_err(|e| e.to_string())?;
+        repo.checkout_head(Some(git2::build::CheckoutBuilder::new().force()))
+            .map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+
+    if analysis.is_normal() {
+        repo.merge(&[&annotated], None, None)
+            .map_err(|e| e.to_string())?;
+
+        let index = repo.index().map_err(|e| e.to_string())?;
+        if index.has_conflicts() {
+            return Err("Pull resulted in conflicts. Please resolve them manually.".to_string());
+        }
+
+        let mut index = repo.index().map_err(|e| e.to_string())?;
+        let tree_oid = index.write_tree().map_err(|e| e.to_string())?;
+        let tree = repo.find_tree(tree_oid).map_err(|e| e.to_string())?;
+        let sig = repo
+            .signature()
+            .map_err(|e| format!("Git signature not configured: {}", e))?;
+        let head_commit = repo
+            .head()
+            .map_err(|e| e.to_string())?
+            .peel_to_commit()
+            .map_err(|e| e.to_string())?;
+        let merge_commit = repo
+            .find_commit(annotated.id())
+            .map_err(|e| e.to_string())?;
+
+        repo.commit(
+            Some("HEAD"),
+            &sig,
+            &sig,
+            &format!("Merge {}/{} into {}", remote, branch, branch),
+            &tree,
+            &[&head_commit, &merge_commit],
+        )
+        .map_err(|e| e.to_string())?;
+
+        repo.cleanup_state().map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+
+    Err("Pull merge not possible".to_string())
+}
+
+#[tauri::command]
+pub fn git_ahead_behind(workspace_path: String) -> Result<(usize, usize), String> {
+    let repo = open_repo(&workspace_path)?;
+    let head = repo.head().map_err(|e| e.to_string())?;
+    let local_oid = head
+        .target()
+        .ok_or_else(|| "HEAD is not a direct reference".to_string())?;
+
+    // Find the upstream branch
+    let branch_name = head
+        .shorthand()
+        .ok_or_else(|| "Could not get branch name".to_string())?
+        .to_string();
+    let branch = repo
+        .find_branch(&branch_name, git2::BranchType::Local)
+        .map_err(|e| e.to_string())?;
+    let upstream = branch
+        .upstream()
+        .map_err(|_| "No upstream branch configured".to_string())?;
+    let remote_oid = upstream
+        .get()
+        .target()
+        .ok_or_else(|| "Upstream is not a direct reference".to_string())?;
+
+    let (ahead, behind) = repo
+        .graph_ahead_behind(local_oid, remote_oid)
+        .map_err(|e| e.to_string())?;
+    Ok((ahead, behind))
+}

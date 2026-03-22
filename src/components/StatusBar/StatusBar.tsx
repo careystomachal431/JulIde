@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useIdeStore } from "../../stores/useIdeStore";
+import { usePluginStore } from "../../stores/usePluginStore";
+import { PluginPanel } from "../Plugin/PluginPanel";
 import { GitBranch, Container } from "lucide-react";
 
 export function StatusBar() {
@@ -21,6 +23,7 @@ export function StatusBar() {
   const workspacePath = useIdeStore((s) => s.workspacePath);
   const activeTab = openTabs.find((t) => t.id === activeTabId);
   const [gitBranch, setGitBranch] = useState("");
+  const pluginStatusItems = usePluginStore((s) => s.statusBarItems);
 
   useEffect(() => {
     if (!workspacePath) { setGitBranch(""); return; }
@@ -77,6 +80,11 @@ export function StatusBar() {
               : "Container"}
           </span>
         )}
+        {pluginStatusItems
+          .filter((item) => item.alignment === "left")
+          .map((item) => (
+            <StatusBarPluginItem key={item.id} item={item} />
+          ))}
       </div>
 
       <div className="status-center">
@@ -86,6 +94,11 @@ export function StatusBar() {
       </div>
 
       <div className="status-bar-right">
+        {pluginStatusItems
+          .filter((item) => item.alignment === "right")
+          .map((item) => (
+            <StatusBarPluginItem key={item.id} item={item} />
+          ))}
         {activeTab && (
           <span className="status-item status-language">
             {activeTab.name.endsWith(".jl") ? "Julia" : "Text"}
@@ -136,5 +149,25 @@ export function StatusBar() {
         </span>
       </div>
     </div>
+  );
+}
+
+function StatusBarPluginItem({ item }: { item: import("../../types/plugin").StatusBarItemContribution }) {
+  if (item.component) {
+    return <PluginPanel component={item.component} />;
+  }
+  if (item.render) {
+    return <PluginPanel render={item.render} />;
+  }
+  const text = typeof item.text === "function" ? item.text() : item.text;
+  return (
+    <span
+      className="status-item"
+      title={item.tooltip}
+      onClick={item.onClick}
+      style={item.onClick ? { cursor: "pointer" } : undefined}
+    >
+      {text}
+    </span>
   );
 }

@@ -2,41 +2,23 @@ import { useEffect, useRef, useCallback } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { Toolbar } from "./components/Toolbar/Toolbar";
-import { FileExplorer } from "./components/FileExplorer/FileExplorer";
 import { EditorSplitContainer } from "./components/Editor/EditorSplitContainer";
-import { OutputPanel } from "./components/OutputPanel/OutputPanel";
-import { TerminalPanel } from "./components/Terminal/TerminalPanel";
-import { DebugPanel } from "./components/Debugger/DebugPanel";
 import { StatusBar } from "./components/StatusBar/StatusBar";
 import { CommandPalette } from "./components/CommandPalette/CommandPalette";
 import { QuickOpen } from "./components/QuickOpen/QuickOpen";
-import { SearchPanel } from "./components/SearchPanel/SearchPanel";
-import { PackageManager } from "./components/PackageManager/PackageManager";
 import { SettingsPanel } from "./components/Settings/SettingsPanel";
 import { ActivityBar } from "./components/ActivityBar/ActivityBar";
-import { GitPanel } from "./components/Git/GitPanel";
-import { ContainerPanel } from "./components/Container/ContainerPanel";
-import { ContainerLogsPanel } from "./components/Container/ContainerLogsPanel";
 import { WelcomeScreen } from "./components/Welcome/WelcomeScreen";
+import { PluginPanel } from "./components/Plugin/PluginPanel";
 import { useSettingsStore } from "./stores/useSettingsStore";
 import { useIdeStore } from "./stores/useIdeStore";
+import { usePluginStore } from "./stores/usePluginStore";
 import { lspClient } from "./lsp/LspClient";
 import { setMonacoMarkers } from "./lsp/juliaProviders";
 import type { LspPublishDiagnosticsParams } from "./lsp/LspClient";
 import type { ContainerOutputEvent, ContainerState, ContainerStatusEvent, DevContainerConfig, Problem } from "./types";
 import "./App.css";
 
-
-type PanelId = "output" | "terminal" | "problems" | "debug" | "packages" | "container-logs";
-
-const PANEL_LABELS: Record<PanelId, string> = {
-  output: "Output",
-  terminal: "Terminal",
-  problems: "Problems",
-  debug: "Debug",
-  packages: "Packages",
-  "container-logs": "Container",
-};
 
 export default function App() {
   const activeBottomPanel = useIdeStore((s) => s.activeBottomPanel);
@@ -54,6 +36,10 @@ export default function App() {
   const setLspStatus = useIdeStore((s) => s.setLspStatus);
   const loadSettings = useSettingsStore((s) => s.loadSettings);
 
+  // Plugin store — dynamic panels
+  const sidebarPanels = usePluginStore((s) => s.sidebarPanels);
+  const bottomPanels = usePluginStore((s) => s.bottomPanels);
+
   // Load settings on mount
   useEffect(() => {
     loadSettings();
@@ -63,19 +49,25 @@ export default function App() {
   const setFileTree = useIdeStore((s) => s.setFileTree);
   const getProblems = () => useIdeStore.getState().problems;
 
+  const refreshGit = useIdeStore((s) => s.refreshGit);
+
   // File watcher: start when workspace opens
   useEffect(() => {
     if (!workspacePath) return;
     invoke("watcher_start", { workspacePath }).catch(console.error);
+    // Also refresh git state when workspace opens
+    refreshGit();
     return () => {
       invoke("watcher_stop").catch(console.error);
     };
-  }, [workspacePath]);
+  }, [workspacePath]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Handle fs-changed events: refresh tree, reload open file content
   useEffect(() => {
     let unlisten: (() => void) | null = null;
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+    let gitDebounce: ReturnType<typeof setTimeout> | null = null;
 
     listen<{ path: string; kind: string }>("fs-changed", (e) => {
       // Debounce tree refresh (many events can fire rapidly)
@@ -88,6 +80,12 @@ export default function App() {
           setFileTree(tree);
         } catch { /* ignore */ }
       }, 500);
+
+      // Also debounce git state refresh
+      if (gitDebounce) clearTimeout(gitDebounce);
+      gitDebounce = setTimeout(() => {
+        useIdeStore.getState().refreshGit();
+      }, 1000);
 
       // Reload open file if modified externally and not dirty
       if (e.payload.kind === "modify") {
@@ -106,6 +104,7 @@ export default function App() {
     return () => {
       unlisten?.();
       if (debounceTimer) clearTimeout(debounceTimer);
+      if (gitDebounce) clearTimeout(gitDebounce);
     };
   }, [setFileTree]);
 
@@ -298,7 +297,11 @@ export default function App() {
     };
   }, [setBottomPanelHeight, setSidebarWidth]);
 
-  const panels: PanelId[] = ["output", "terminal", "problems", "debug", "packages", "container-logs"];
+  // Find the active sidebar panel
+  const activeSidebar = sidebarPanels.find((p) => p.id === activeSidebarView);
+
+  // Find the active bottom panel definition
+  const activeBottom = bottomPanels.find((p) => p.id === activeBottomPanel);
 
   const currentTheme = useSettingsStore((s) => s.settings.theme);
   const themeClass = currentTheme === "julide-light" ? "theme-light" : "theme-dark";
@@ -318,10 +321,13 @@ export default function App() {
 
       {/* Sidebar */}
       <div className="ide-sidebar" style={{ width: sidebarWidth }}>
-        {activeSidebarView === "files" && <FileExplorer />}
-        {activeSidebarView === "search" && <SearchPanel />}
-        {activeSidebarView === "git" && <GitPanel />}
-        {activeSidebarView === "container" && <ContainerPanel />}
+        {activeSidebar && (
+          <PluginPanel
+            key={activeSidebar.id}
+            component={activeSidebar.component}
+            render={activeSidebar.render}
+          />
+        )}
       </div>
 
       {/* Sidebar resize handle */}
@@ -349,29 +355,38 @@ export default function App() {
         {/* Bottom panel */}
         <div className="ide-bottom-panel" style={{ height: bottomPanelHeight }}>
           <div className="bottom-panel-tabs">
-            {panels.map((id) => (
+            {bottomPanels.map((panel) => (
               <button
-                key={id}
-                className={`bottom-tab ${activeBottomPanel === id ? "active" : ""}`}
-                onClick={() => setActiveBottomPanel(id)}
+                key={panel.id}
+                className={`bottom-tab ${activeBottomPanel === panel.id ? "active" : ""}`}
+                onClick={() => setActiveBottomPanel(panel.id)}
               >
-                {PANEL_LABELS[id]}
-                {id === "problems" && problems.length > 0 && (
+                {panel.label}
+                {panel.id === "problems" && problems.length > 0 && (
                   <span className="tab-badge">{problems.length}</span>
                 )}
-                {id === "debug" && debug.isDebugging && (
+                {panel.id === "debug" && debug.isDebugging && (
                   <span className="tab-badge debug-badge">●</span>
                 )}
+                {panel.badge && panel.id !== "problems" && panel.id !== "debug" && (() => {
+                  const val = panel.badge!();
+                  return val != null ? <span className="tab-badge">{val}</span> : null;
+                })()}
               </button>
             ))}
           </div>
           <div className="bottom-panel-content">
-            {activeBottomPanel === "output" && <OutputPanel />}
-            {activeBottomPanel === "terminal" && <TerminalPanel />}
-            {activeBottomPanel === "problems" && <ProblemsPanel />}
-            {activeBottomPanel === "debug" && <DebugPanel />}
-            {activeBottomPanel === "packages" && <PackageManager />}
-            {activeBottomPanel === "container-logs" && <ContainerLogsPanel />}
+            {activeBottom ? (
+              activeBottom.id === "problems" ? (
+                <ProblemsPanel />
+              ) : (
+                <PluginPanel
+                  key={activeBottom.id}
+                  component={activeBottom.component}
+                  render={activeBottom.render}
+                />
+              )
+            ) : null}
           </div>
         </div>
       </div>

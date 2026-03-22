@@ -2,9 +2,15 @@ mod container;
 mod debugger;
 mod fs;
 mod git;
+mod git_auth;
+mod git_gitea;
+mod git_github;
+mod git_gitlab;
+mod git_provider;
 mod julia;
 mod lsp;
 mod pluto;
+mod plugins;
 mod pty;
 mod search;
 mod settings;
@@ -88,6 +94,37 @@ pub fn run() {
             git::git_commit,
             git::git_log,
             git::git_checkout_branch,
+            // Git (new commands)
+            git::git_remotes,
+            git::git_remote_url,
+            git::git_branch_create,
+            git::git_branch_delete,
+            git::git_merge,
+            git::git_stash_save,
+            git::git_stash_list,
+            git::git_stash_pop,
+            git::git_fetch,
+            git::git_push,
+            git::git_pull,
+            git::git_ahead_behind,
+            // Git Auth
+            git_auth::git_auth_save_token,
+            git_auth::git_auth_get_token,
+            git_auth::git_auth_remove_token,
+            git_auth::git_auth_list_accounts,
+            // Git Provider
+            git_provider::git_provider_detect,
+            git_provider::git_provider_repo_info,
+            git_provider::git_provider_list_prs,
+            git_provider::git_provider_create_pr,
+            git_provider::git_provider_merge_pr,
+            git_provider::git_provider_list_issues,
+            git_provider::git_provider_create_issue,
+            git_provider::git_provider_ci_status,
+            // Plugins
+            plugins::plugin_get_dir,
+            plugins::plugin_scan,
+            plugins::plugin_read_entry,
             // Container
             container::container_detect_runtime,
             container::container_set_runtime,

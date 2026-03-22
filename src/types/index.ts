@@ -52,7 +52,7 @@ export interface DebugState {
   callStack: string[];
 }
 
-export type ActiveBottomPanel = "output" | "terminal" | "problems" | "debug" | "packages" | "container-logs";
+export type ActiveBottomPanel = string;
 
 export interface JuliaOutputEvent {
   kind: "stdout" | "stderr" | "done" | "error";
@@ -88,7 +88,7 @@ export interface SearchResult {
   match_text: string;
 }
 
-export type SidebarView = "files" | "search" | "git" | "container";
+export type SidebarView = string;
 
 // ─── Container Types ─────────────────────────────────────────────────────────
 
@@ -115,6 +115,18 @@ export interface ContainerOutputEvent {
   text: string;
   exit_code?: number;
 }
+
+// Re-export plugin types
+export type {
+  CommandContribution,
+  SidebarPanelContribution,
+  BottomPanelContribution,
+  StatusBarItemContribution,
+  ToolbarButtonContribution,
+  PluginManifest,
+  PluginContext,
+  Disposable,
+} from "./plugin";
 
 export interface DevContainerConfig {
   name?: string;

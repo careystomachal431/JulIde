@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
 import type * as Monaco from "monaco-editor";
+import { invoke } from "@tauri-apps/api/core";
 import type {
   ActiveBottomPanel,
   Breakpoint,
@@ -14,6 +15,7 @@ import type {
   SearchResult,
   SidebarView,
 } from "../types";
+import type { GitFileStatus, GitRemote, GitStash } from "../types/git";
 
 interface IdeStore {
   // Workspace
@@ -139,6 +141,27 @@ interface IdeStore {
   setDevcontainerConfig: (config: DevContainerConfig | null) => void;
   appendContainerLog: (line: Omit<OutputLine, "id" | "timestamp">) => void;
   clearContainerLogs: () => void;
+
+  // Git
+  gitIsRepo: boolean;
+  gitBranch: string;
+  gitBranches: string[];
+  gitFiles: GitFileStatus[];
+  gitRemotes: GitRemote[];
+  gitStashes: GitStash[];
+  gitAheadBehind: { ahead: number; behind: number };
+  gitProvider: string | null;
+  gitIsSyncing: boolean;
+  setGitIsRepo: (v: boolean) => void;
+  setGitBranch: (b: string) => void;
+  setGitBranches: (b: string[]) => void;
+  setGitFiles: (f: GitFileStatus[]) => void;
+  setGitRemotes: (r: GitRemote[]) => void;
+  setGitStashes: (s: GitStash[]) => void;
+  setGitAheadBehind: (ab: { ahead: number; behind: number }) => void;
+  setGitProvider: (p: string | null) => void;
+  setGitIsSyncing: (v: boolean) => void;
+  refreshGit: () => Promise<void>;
 }
 
 let outputIdCounter = 0;
@@ -467,5 +490,88 @@ export const useIdeStore = create<IdeStore>()(
       set((s) => {
         s.containerLogs = [];
       }),
+
+    // Git
+    gitIsRepo: false,
+    gitBranch: "",
+    gitBranches: [],
+    gitFiles: [],
+    gitRemotes: [],
+    gitStashes: [],
+    gitAheadBehind: { ahead: 0, behind: 0 },
+    gitProvider: null,
+    gitIsSyncing: false,
+    setGitIsRepo: (v) =>
+      set((s) => {
+        s.gitIsRepo = v;
+      }),
+    setGitBranch: (b) =>
+      set((s) => {
+        s.gitBranch = b;
+      }),
+    setGitBranches: (b) =>
+      set((s) => {
+        s.gitBranches = b;
+      }),
+    setGitFiles: (f) =>
+      set((s) => {
+        s.gitFiles = f as any;
+      }),
+    setGitRemotes: (r) =>
+      set((s) => {
+        s.gitRemotes = r as any;
+      }),
+    setGitStashes: (stashes) =>
+      set((s) => {
+        s.gitStashes = stashes as any;
+      }),
+    setGitAheadBehind: (ab) =>
+      set((s) => {
+        s.gitAheadBehind = ab;
+      }),
+    setGitProvider: (p) =>
+      set((s) => {
+        s.gitProvider = p;
+      }),
+    setGitIsSyncing: (v) =>
+      set((s) => {
+        s.gitIsSyncing = v;
+      }),
+    refreshGit: async () => {
+      const wp = useIdeStore.getState().workspacePath;
+      if (!wp) return;
+      try {
+        const isRepo = await invoke<boolean>("git_is_repo", { workspacePath: wp });
+        useIdeStore.getState().setGitIsRepo(isRepo);
+        if (!isRepo) return;
+
+        const [branch, branches, files, provider] = await Promise.all([
+          invoke<string>("git_branch_current", { workspacePath: wp }).catch(() => ""),
+          invoke<string[]>("git_branches", { workspacePath: wp }).catch(() => []),
+          invoke<GitFileStatus[]>("git_status", { workspacePath: wp }).catch(() => []),
+          invoke<string | null>("git_provider_detect", { workspacePath: wp }).catch(() => null),
+        ]);
+
+        const state = useIdeStore.getState();
+        state.setGitBranch(branch);
+        state.setGitBranches(branches);
+        state.setGitFiles(files);
+        state.setGitProvider(provider);
+
+        // Fetch remotes, stashes, and ahead/behind in parallel (these may fail if commands not available yet)
+        const [remotes, stashes, aheadBehind] = await Promise.all([
+          invoke<GitRemote[]>("git_remotes", { workspacePath: wp }).catch(() => []),
+          invoke<GitStash[]>("git_stash_list", { workspacePath: wp }).catch(() => []),
+          invoke<[number, number]>("git_ahead_behind", { workspacePath: wp }).catch(() => [0, 0] as [number, number]),
+        ]);
+
+        const state2 = useIdeStore.getState();
+        state2.setGitRemotes(remotes);
+        state2.setGitStashes(stashes);
+        state2.setGitAheadBehind({ ahead: aheadBehind[0], behind: aheadBehind[1] });
+      } catch {
+        // Silently fail — git might not be available
+      }
+    },
   }))
 );

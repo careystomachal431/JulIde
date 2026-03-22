@@ -1,0 +1,472 @@
+import { invoke } from "@tauri-apps/api/core";
+import { usePluginStore } from "../stores/usePluginStore";
+import { useIdeStore } from "../stores/useIdeStore";
+import { useSettingsStore } from "../stores/useSettingsStore";
+import type { FileNode } from "../types";
+
+// Lazy component imports — these are imported by the consumers (App.tsx) already,
+// but we reference them here to register sidebar/bottom panels.
+// We use dynamic imports to avoid circular dependency issues.
+
+let _componentCache: Record<string, React.ComponentType> = {};
+
+async function getComponent(name: string): Promise<React.ComponentType> {
+  if (_componentCache[name]) return _componentCache[name];
+
+  switch (name) {
+    case "FileExplorer": {
+      const m = await import("../components/FileExplorer/FileExplorer");
+      _componentCache[name] = m.FileExplorer;
+      return m.FileExplorer;
+    }
+    case "SearchPanel": {
+      const m = await import("../components/SearchPanel/SearchPanel");
+      _componentCache[name] = m.SearchPanel;
+      return m.SearchPanel;
+    }
+    case "GitPanel": {
+      const m = await import("../components/Git/GitPanel");
+      _componentCache[name] = m.GitPanel;
+      return m.GitPanel;
+    }
+    case "ContainerPanel": {
+      const m = await import("../components/Container/ContainerPanel");
+      _componentCache[name] = m.ContainerPanel;
+      return m.ContainerPanel;
+    }
+    case "OutputPanel": {
+      const m = await import("../components/OutputPanel/OutputPanel");
+      _componentCache[name] = m.OutputPanel;
+      return m.OutputPanel;
+    }
+    case "TerminalPanel": {
+      const m = await import("../components/Terminal/TerminalPanel");
+      _componentCache[name] = m.TerminalPanel;
+      return m.TerminalPanel;
+    }
+    case "DebugPanel": {
+      const m = await import("../components/Debugger/DebugPanel");
+      _componentCache[name] = m.DebugPanel;
+      return m.DebugPanel;
+    }
+    case "PackageManager": {
+      const m = await import("../components/PackageManager/PackageManager");
+      _componentCache[name] = m.PackageManager;
+      return m.PackageManager;
+    }
+    case "ContainerLogsPanel": {
+      const m = await import("../components/Container/ContainerLogsPanel");
+      _componentCache[name] = m.ContainerLogsPanel;
+      return m.ContainerLogsPanel;
+    }
+    default:
+      throw new Error(`Unknown component: ${name}`);
+  }
+}
+
+/**
+ * Register all built-in contributions into the plugin store.
+ * Called once at app startup before rendering.
+ */
+export async function registerBuiltinContributions() {
+  const store = usePluginStore.getState();
+
+  // ─── Sidebar Panels ─────────────────────────────────────────────────────────
+
+  const [
+    FileExplorer,
+    SearchPanel,
+    GitPanel,
+    ContainerPanel,
+  ] = await Promise.all([
+    getComponent("FileExplorer"),
+    getComponent("SearchPanel"),
+    getComponent("GitPanel"),
+    getComponent("ContainerPanel"),
+  ]);
+
+  store.registerSidebarPanel({
+    id: "files",
+    label: "Explorer",
+    icon: "Files",
+    order: 10,
+    component: FileExplorer,
+  });
+  store.registerSidebarPanel({
+    id: "search",
+    label: "Search",
+    icon: "Search",
+    order: 20,
+    component: SearchPanel,
+  });
+  store.registerSidebarPanel({
+    id: "git",
+    label: "Source Control",
+    icon: "GitBranch",
+    order: 30,
+    component: GitPanel,
+  });
+  store.registerSidebarPanel({
+    id: "container",
+    label: "Dev Containers",
+    icon: "Container",
+    order: 40,
+    component: ContainerPanel,
+  });
+
+  // ─── Bottom Panels ──────────────────────────────────────────────────────────
+
+  const [
+    OutputPanel,
+    TerminalPanel,
+    DebugPanel,
+    PackageManager,
+    ContainerLogsPanel,
+  ] = await Promise.all([
+    getComponent("OutputPanel"),
+    getComponent("TerminalPanel"),
+    getComponent("DebugPanel"),
+    getComponent("PackageManager"),
+    getComponent("ContainerLogsPanel"),
+  ]);
+
+  store.registerBottomPanel({
+    id: "output",
+    label: "Output",
+    order: 10,
+    component: OutputPanel,
+  });
+  store.registerBottomPanel({
+    id: "terminal",
+    label: "Terminal",
+    order: 20,
+    component: TerminalPanel,
+  });
+  store.registerBottomPanel({
+    id: "problems",
+    label: "Problems",
+    order: 30,
+    badge: () => {
+      const count = useIdeStore.getState().problems.length;
+      return count > 0 ? count : null;
+    },
+  });
+  store.registerBottomPanel({
+    id: "debug",
+    label: "Debug",
+    order: 40,
+    component: DebugPanel,
+    badge: () => (useIdeStore.getState().debug.isDebugging ? "●" : null),
+  });
+  store.registerBottomPanel({
+    id: "packages",
+    label: "Packages",
+    order: 50,
+    component: PackageManager,
+  });
+  store.registerBottomPanel({
+    id: "container-logs",
+    label: "Container",
+    order: 60,
+    component: ContainerLogsPanel,
+  });
+
+  // ─── Commands ───────────────────────────────────────────────────────────────
+
+  registerBuiltinCommands();
+}
+
+function registerBuiltinCommands() {
+  const store = usePluginStore.getState();
+  const ide = () => useIdeStore.getState();
+  const settings = () => useSettingsStore.getState();
+
+  store.registerCommand({
+    id: "file.open-folder",
+    label: "Open Folder",
+    shortcut: "⌘O",
+    execute: async () => {
+      const path = await invoke<string | null>("dialog_open_folder");
+      if (!path) return;
+      const tree = await invoke<FileNode>("fs_get_tree", { path });
+      ide().setWorkspace(path, tree);
+    },
+  });
+
+  store.registerCommand({
+    id: "file.quick-open",
+    label: "Go to File",
+    shortcut: "⌘P",
+    execute: () => ide().setQuickOpenOpen(true),
+  });
+
+  store.registerCommand({
+    id: "edit.find",
+    label: "Find in File",
+    shortcut: "⌘F",
+    execute: () => ide().editorInstance?.getAction("actions.find")?.run(),
+  });
+
+  store.registerCommand({
+    id: "edit.find-replace",
+    label: "Find and Replace",
+    shortcut: "⌘H",
+    execute: () =>
+      ide().editorInstance?.getAction("editor.action.startFindReplaceAction")?.run(),
+  });
+
+  store.registerCommand({
+    id: "search.global",
+    label: "Search in Files",
+    shortcut: "⌘⇧F",
+    execute: () => ide().setActiveSidebarView("search"),
+  });
+
+  store.registerCommand({
+    id: "settings.open",
+    label: "Open Settings",
+    shortcut: "⌘,",
+    execute: () => settings().setSettingsOpen(true),
+  });
+
+  store.registerCommand({
+    id: "editor.split",
+    label: "Toggle Split Editor",
+    execute: () => ide().toggleSplitEditor(),
+  });
+
+  store.registerCommand({
+    id: "julia.run",
+    label: "Run Julia File",
+    shortcut: "⌃F5",
+    execute: async () => {
+      const s = ide();
+      const activeTab = s.openTabs.find((t) => t.id === s.activeTabId);
+      if (!activeTab) return;
+      s.clearOutput();
+      s.setActiveBottomPanel("output");
+      s.setIsRunning(true);
+      s.appendOutput({ kind: "info", text: `Running: ${activeTab.name}` });
+      await invoke("julia_run", {
+        filePath: activeTab.path,
+        projectPath: s.workspacePath ?? null,
+      }).catch((e) => s.appendOutput({ kind: "stderr", text: String(e) }));
+    },
+  });
+
+  store.registerCommand({
+    id: "julia.precompile",
+    label: "Precompile Julia Project",
+    execute: async () => {
+      const s = ide();
+      s.clearOutput();
+      s.setActiveBottomPanel("output");
+      s.appendOutput({ kind: "info", text: "Precompiling..." });
+      await invoke("julia_precompile", { projectPath: s.workspacePath ?? null });
+    },
+  });
+
+  store.registerCommand({
+    id: "julia.clean",
+    label: "Clean Build Artifacts",
+    execute: async () => {
+      const s = ide();
+      s.clearOutput();
+      s.setActiveBottomPanel("output");
+      await invoke("julia_clean", { projectPath: s.workspacePath ?? null });
+    },
+  });
+
+  store.registerCommand({
+    id: "julia.stop",
+    label: "Stop Julia Process",
+    execute: async () => {
+      await invoke("julia_kill");
+      ide().setIsRunning(false);
+    },
+  });
+
+  store.registerCommand({
+    id: "panel.output",
+    label: "Show Output Panel",
+    execute: () => ide().setActiveBottomPanel("output"),
+  });
+
+  store.registerCommand({
+    id: "panel.terminal",
+    label: "Show Terminal",
+    shortcut: "⌃`",
+    execute: () => ide().setActiveBottomPanel("terminal"),
+  });
+
+  store.registerCommand({
+    id: "panel.problems",
+    label: "Show Problems",
+    execute: () => ide().setActiveBottomPanel("problems"),
+  });
+
+  store.registerCommand({
+    id: "panel.debug",
+    label: "Show Debug Panel",
+    execute: () => ide().setActiveBottomPanel("debug"),
+  });
+
+  store.registerCommand({
+    id: "output.clear",
+    label: "Clear Output",
+    execute: () => ide().clearOutput(),
+  });
+
+  store.registerCommand({
+    id: "container.reopen",
+    label: "Dev Containers: Reopen in Container",
+    execute: async () => {
+      const s = ide();
+      if (!s.workspacePath) return;
+      const st = settings().settings;
+      s.setActiveBottomPanel("container-logs");
+      await invoke("devcontainer_up", {
+        workspacePath: s.workspacePath,
+        displayForwarding: st.displayForwarding,
+        gpuPassthrough: st.gpuPassthrough,
+        selinuxLabel: st.selinuxLabel,
+        persistJuliaPackages: st.persistJuliaPackages,
+      }).catch((e) => console.error(e));
+    },
+  });
+
+  store.registerCommand({
+    id: "container.rebuild",
+    label: "Dev Containers: Rebuild Container",
+    execute: async () => {
+      const s = ide();
+      if (!s.workspacePath) return;
+      const st = settings().settings;
+      s.setActiveBottomPanel("container-logs");
+      await invoke("devcontainer_rebuild", {
+        workspacePath: s.workspacePath,
+        displayForwarding: st.displayForwarding,
+        gpuPassthrough: st.gpuPassthrough,
+        selinuxLabel: st.selinuxLabel,
+        persistJuliaPackages: st.persistJuliaPackages,
+      }).catch((e) => console.error(e));
+    },
+  });
+
+  store.registerCommand({
+    id: "container.stop",
+    label: "Dev Containers: Stop Container",
+    execute: async () => {
+      await invoke("devcontainer_stop").catch((e) => console.error(e));
+    },
+  });
+
+  store.registerCommand({
+    id: "container.logs",
+    label: "Dev Containers: Show Container Logs",
+    execute: () => ide().setActiveBottomPanel("container-logs"),
+  });
+
+  store.registerCommand({
+    id: "container.panel",
+    label: "Dev Containers: Show Container Panel",
+    execute: () => ide().setActiveSidebarView("container"),
+  });
+
+  // ─── Git Commands ─────────────────────────────────────────────────────────
+
+  store.registerCommand({
+    id: "git.push",
+    label: "Git: Push",
+    category: "Git",
+    execute: async () => {
+      const s = ide();
+      if (!s.workspacePath || !s.gitBranch) return;
+      s.setGitIsSyncing(true);
+      try {
+        await invoke("git_push", { workspacePath: s.workspacePath, remote: "origin", branch: s.gitBranch });
+        await s.refreshGit();
+      } catch (e) {
+        s.appendOutput({ kind: "stderr", text: `Git push failed: ${e}` });
+      } finally {
+        s.setGitIsSyncing(false);
+      }
+    },
+  });
+
+  store.registerCommand({
+    id: "git.pull",
+    label: "Git: Pull",
+    category: "Git",
+    execute: async () => {
+      const s = ide();
+      if (!s.workspacePath || !s.gitBranch) return;
+      s.setGitIsSyncing(true);
+      try {
+        await invoke("git_pull", { workspacePath: s.workspacePath, remote: "origin", branch: s.gitBranch });
+        await s.refreshGit();
+      } catch (e) {
+        s.appendOutput({ kind: "stderr", text: `Git pull failed: ${e}` });
+      } finally {
+        s.setGitIsSyncing(false);
+      }
+    },
+  });
+
+  store.registerCommand({
+    id: "git.fetch",
+    label: "Git: Fetch",
+    category: "Git",
+    execute: async () => {
+      const s = ide();
+      if (!s.workspacePath) return;
+      s.setGitIsSyncing(true);
+      try {
+        await invoke("git_fetch", { workspacePath: s.workspacePath, remote: "origin" });
+        await s.refreshGit();
+      } catch (e) {
+        s.appendOutput({ kind: "stderr", text: `Git fetch failed: ${e}` });
+      } finally {
+        s.setGitIsSyncing(false);
+      }
+    },
+  });
+
+  store.registerCommand({
+    id: "git.stash",
+    label: "Git: Stash Changes",
+    category: "Git",
+    execute: async () => {
+      const s = ide();
+      if (!s.workspacePath) return;
+      try {
+        await invoke("git_stash_save", { workspacePath: s.workspacePath, message: "" });
+        await s.refreshGit();
+      } catch (e) {
+        s.appendOutput({ kind: "stderr", text: `Git stash failed: ${e}` });
+      }
+    },
+  });
+
+  store.registerCommand({
+    id: "git.stash-pop",
+    label: "Git: Pop Stash",
+    category: "Git",
+    execute: async () => {
+      const s = ide();
+      if (!s.workspacePath) return;
+      try {
+        await invoke("git_stash_pop", { workspacePath: s.workspacePath, index: 0 });
+        await s.refreshGit();
+      } catch (e) {
+        s.appendOutput({ kind: "stderr", text: `Git stash pop failed: ${e}` });
+      }
+    },
+  });
+
+  store.registerCommand({
+    id: "git.panel",
+    label: "Git: Show Source Control",
+    execute: () => ide().setActiveSidebarView("git"),
+  });
+}

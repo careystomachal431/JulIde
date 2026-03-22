@@ -1,6 +1,8 @@
 import { useEffect, useRef } from "react";
 import { X } from "lucide-react";
 import { useSettingsStore } from "../../stores/useSettingsStore";
+import { PluginSettings } from "./PluginSettings";
+import { GitAuthSettings } from "../Git/GitAuthSettings";
 
 export function SettingsPanel() {
   const open = useSettingsStore((s) => s.settingsOpen);
@@ -229,6 +231,10 @@ export function SettingsPanel() {
               </label>
             </SettingRow>
           </SettingsSection>
+
+          <GitAuthSettings />
+
+          <PluginSettings />
         </div>
       </div>
     </div>

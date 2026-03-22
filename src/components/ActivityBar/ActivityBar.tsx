@@ -1,48 +1,50 @@
-import { Files, Search, GitBranch, Settings, Container } from "lucide-react";
+import {
+  Files,
+  Search,
+  GitBranch,
+  Settings,
+  Container,
+  Puzzle,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { useIdeStore } from "../../stores/useIdeStore";
 import { useSettingsStore } from "../../stores/useSettingsStore";
-import type { SidebarView } from "../../types";
+import { usePluginStore } from "../../stores/usePluginStore";
+
+const ICON_MAP: Record<string, LucideIcon> = {
+  Files,
+  Search,
+  GitBranch,
+  Container,
+  Puzzle,
+};
 
 export function ActivityBar() {
   const activeSidebarView = useIdeStore((s) => s.activeSidebarView);
   const setActiveSidebarView = useIdeStore((s) => s.setActiveSidebarView);
   const setSettingsOpen = useSettingsStore((s) => s.setSettingsOpen);
+  const sidebarPanels = usePluginStore((s) => s.sidebarPanels);
 
-  const toggle = (view: SidebarView) => {
-    setActiveSidebarView(activeSidebarView === view ? view : view);
+  const toggle = (viewId: string) => {
+    setActiveSidebarView(activeSidebarView === viewId ? viewId : viewId);
   };
 
   return (
     <div className="activity-bar">
       <div className="activity-bar-top">
-        <button
-          className={`activity-bar-btn ${activeSidebarView === "files" ? "active" : ""}`}
-          onClick={() => toggle("files")}
-          title="Explorer"
-        >
-          <Files size={20} />
-        </button>
-        <button
-          className={`activity-bar-btn ${activeSidebarView === "search" ? "active" : ""}`}
-          onClick={() => toggle("search")}
-          title="Search"
-        >
-          <Search size={20} />
-        </button>
-        <button
-          className={`activity-bar-btn ${activeSidebarView === "git" ? "active" : ""}`}
-          onClick={() => toggle("git")}
-          title="Source Control"
-        >
-          <GitBranch size={20} />
-        </button>
-        <button
-          className={`activity-bar-btn ${activeSidebarView === "container" ? "active" : ""}`}
-          onClick={() => toggle("container")}
-          title="Dev Containers"
-        >
-          <Container size={20} />
-        </button>
+        {sidebarPanels.map((panel) => {
+          const Icon = ICON_MAP[panel.icon] || Puzzle;
+          return (
+            <button
+              key={panel.id}
+              className={`activity-bar-btn ${activeSidebarView === panel.id ? "active" : ""}`}
+              onClick={() => toggle(panel.id)}
+              title={panel.label}
+            >
+              <Icon size={20} />
+            </button>
+          );
+        })}
       </div>
       <div className="activity-bar-bottom">
         <button

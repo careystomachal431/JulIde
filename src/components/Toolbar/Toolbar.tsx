@@ -14,6 +14,8 @@ import {
   Container,
 } from "lucide-react";
 import { useIdeStore } from "../../stores/useIdeStore";
+import { usePluginStore } from "../../stores/usePluginStore";
+import { PluginPanel } from "../Plugin/PluginPanel";
 import type { FileNode } from "../../types";
 
 export function Toolbar() {
@@ -36,6 +38,7 @@ export function Toolbar() {
   const containerMode = useIdeStore((s) => s.containerMode);
   const containerId = useIdeStore((s) => s.containerId);
   const devcontainerDetected = useIdeStore((s) => s.devcontainerDetected);
+  const pluginToolbarButtons = usePluginStore((s) => s.toolbarButtons);
 
   const activeTab = openTabs.find((t) => t.id === activeTabId) ?? null;
 
@@ -303,6 +306,35 @@ export function Toolbar() {
               <Container size={15} />
               <span>Container</span>
             </button>
+          </>
+        )}
+
+        {/* Plugin-contributed toolbar buttons */}
+        {pluginToolbarButtons.length > 0 && (
+          <>
+            <div className="toolbar-separator" />
+            {pluginToolbarButtons.map((btn) => {
+              const isVisible = btn.visible ? btn.visible() : true;
+              const isDisabled = btn.disabled ? btn.disabled() : false;
+              if (!isVisible) return null;
+              if (btn.component) {
+                return <PluginPanel key={btn.id} component={btn.component} />;
+              }
+              if (btn.render) {
+                return <PluginPanel key={btn.id} render={btn.render} />;
+              }
+              return (
+                <button
+                  key={btn.id}
+                  className="toolbar-btn"
+                  onClick={btn.onClick}
+                  disabled={isDisabled}
+                  title={btn.label}
+                >
+                  <span>{btn.label}</span>
+                </button>
+              );
+            })}
           </>
         )}
       </div>
