@@ -51,54 +51,131 @@ fn find_julia_impl() -> Option<PathBuf> {
         }
     }
 
-    // 2. Login shell PATH lookup (handles juliaup, Homebrew, etc.)
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
-    if let Ok(output) = std::process::Command::new(&shell)
-        .args(["-l", "-c", "which julia"])
-        .output()
+    // 2. PATH lookup via shell
+    #[cfg(unix)]
     {
-        if output.status.success() {
-            let path = String::from_utf8_lossy(&output.stdout)
-                .trim()
-                .to_string();
-            let p = PathBuf::from(&path);
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
+        if let Ok(output) = std::process::Command::new(&shell)
+            .args(["-l", "-c", "which julia"])
+            .output()
+        {
+            if output.status.success() {
+                let path = String::from_utf8_lossy(&output.stdout)
+                    .trim()
+                    .to_string();
+                let p = PathBuf::from(&path);
+                if p.exists() {
+                    return Some(p);
+                }
+            }
+        }
+    }
+    #[cfg(windows)]
+    {
+        if let Ok(output) = std::process::Command::new("cmd")
+            .args(["/C", "where julia"])
+            .output()
+        {
+            if output.status.success() {
+                // `where` may return multiple lines; take the first
+                let path = String::from_utf8_lossy(&output.stdout)
+                    .lines()
+                    .next()
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
+                let p = PathBuf::from(&path);
+                if p.exists() {
+                    return Some(p);
+                }
+            }
+        }
+    }
+
+    // 3. juliaup default location
+    #[cfg(unix)]
+    {
+        if let Some(home) = dirs_next::home_dir() {
+            let p = home.join(".juliaup/bin/julia");
+            if p.exists() {
+                return Some(p);
+            }
+        }
+    }
+    #[cfg(windows)]
+    {
+        if let Ok(localappdata) = std::env::var("LOCALAPPDATA") {
+            let p = PathBuf::from(&localappdata).join("juliaup\\bin\\julia.exe");
             if p.exists() {
                 return Some(p);
             }
         }
     }
 
-    // 3. juliaup default location
-    if let Ok(home) = std::env::var("HOME") {
-        let p = PathBuf::from(&home).join(".juliaup/bin/julia");
-        if p.exists() {
-            return Some(p);
-        }
-    }
-
     // 4. Common static paths
-    for candidate in &[
-        "/opt/homebrew/bin/julia",
-        "/usr/local/bin/julia",
-        "/usr/bin/julia",
-    ] {
-        let p = PathBuf::from(candidate);
-        if p.exists() {
-            return Some(p);
+    #[cfg(unix)]
+    {
+        for candidate in &[
+            "/opt/homebrew/bin/julia",
+            "/usr/local/bin/julia",
+            "/usr/bin/julia",
+        ] {
+            let p = PathBuf::from(candidate);
+            if p.exists() {
+                return Some(p);
+            }
+        }
+    }
+    #[cfg(windows)]
+    {
+        // Check common Windows install locations
+        if let Ok(localappdata) = std::env::var("LOCALAPPDATA") {
+            // Scan LocalAppData\Programs for Julia-* directories
+            let programs = PathBuf::from(&localappdata).join("Programs");
+            if let Ok(entries) = std::fs::read_dir(&programs) {
+                for entry in entries.flatten() {
+                    let name = entry.file_name();
+                    let name_str = name.to_string_lossy();
+                    if name_str.starts_with("Julia") && entry.path().is_dir() {
+                        let bin = entry.path().join("bin\\julia.exe");
+                        if bin.exists() {
+                            return Some(bin);
+                        }
+                    }
+                }
+            }
+        }
+        // Also check Program Files
+        for pf in &["C:\\Program Files", "C:\\Program Files (x86)"] {
+            if let Ok(entries) = std::fs::read_dir(pf) {
+                for entry in entries.flatten() {
+                    let name = entry.file_name();
+                    let name_str = name.to_string_lossy();
+                    if name_str.starts_with("Julia") && entry.path().is_dir() {
+                        let bin = entry.path().join("bin\\julia.exe");
+                        if bin.exists() {
+                            return Some(bin);
+                        }
+                    }
+                }
+            }
         }
     }
 
-    // 5. Scan /Applications for Julia*.app
-    if let Ok(entries) = std::fs::read_dir("/Applications") {
-        for entry in entries.flatten() {
-            let name = entry.file_name();
-            let name_str = name.to_string_lossy();
-            if name_str.starts_with("Julia") && name_str.ends_with(".app") {
-                let bin = entry
-                    .path()
-                    .join("Contents/Resources/julia/bin/julia");
-                if bin.exists() {
-                    return Some(bin);
+    // 5. Scan /Applications for Julia*.app (macOS only)
+    #[cfg(target_os = "macos")]
+    {
+        if let Ok(entries) = std::fs::read_dir("/Applications") {
+            for entry in entries.flatten() {
+                let name = entry.file_name();
+                let name_str = name.to_string_lossy();
+                if name_str.starts_with("Julia") && name_str.ends_with(".app") {
+                    let bin = entry
+                        .path()
+                        .join("Contents/Resources/julia/bin/julia");
+                    if bin.exists() {
+                        return Some(bin);
+                    }
                 }
             }
         }
@@ -124,8 +201,9 @@ pub async fn julia_get_version() -> Result<String, String> {
 
 #[tauri::command]
 pub async fn julia_list_environments() -> Result<Vec<String>, String> {
-    let home = std::env::var("HOME").map_err(|e| e.to_string())?;
-    let envs_path = PathBuf::from(&home).join(".julia/environments");
+    let home = dirs_next::home_dir()
+        .ok_or_else(|| "Could not determine home directory".to_string())?;
+    let envs_path = home.join(".julia").join("environments");
 
     let mut envs = vec!["@v#.#".to_string()];
     if let Ok(entries) = std::fs::read_dir(&envs_path) {
