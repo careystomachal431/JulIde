@@ -8,6 +8,11 @@ A modern, fully-featured IDE for the [Julia](https://julialang.org/) programming
 <img width="2553" height="1353" alt="image" src="https://github.com/user-attachments/assets/29f6e9da-70d3-4e0c-a550-d85903ee63ed" />
 
 ---
+## Credits
+
+[@ Rakesh ](https://github.com/rakeshksr) - conributed a bug fix 🎉
+
+---
 
 ## Features
 
