@@ -2481,6 +2481,141 @@ button, input, select {
   background: rgba(64, 99, 216, 0.15);
 }
 
+/* ── Git Diff Viewer ───────────────────────────────────────── */
+.diff-viewer { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+.diff-viewer-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 10px; border-bottom: 1px solid var(--border);
+  font-size: 12px; color: var(--text-primary);
+}
+.diff-viewer-title { display: flex; align-items: center; gap: 6px; }
+.diff-viewer-status {
+  font-size: 10px; font-weight: 700; padding: 1px 5px;
+  border-radius: 3px; text-transform: uppercase;
+}
+.diff-viewer-status.modified { background: rgba(64, 99, 216, 0.2); color: #6b8bf5; }
+.diff-viewer-status.added { background: rgba(56, 152, 38, 0.2); color: #5abf45; }
+.diff-viewer-status.deleted { background: rgba(203, 60, 51, 0.2); color: #e06058; }
+.diff-viewer-status.untracked { background: rgba(150, 150, 150, 0.2); color: #969696; }
+.diff-viewer-close {
+  background: none; border: none; cursor: pointer;
+  color: var(--text-secondary); padding: 2px;
+}
+.diff-viewer-close:hover { color: var(--text-primary); }
+.diff-viewer-editor { flex: 1; overflow: hidden; }
+.diff-viewer-loading {
+  display: flex; align-items: center; justify-content: center;
+  height: 100%; color: var(--text-muted); font-size: 13px;
+}
+.git-file-path { cursor: pointer; }
+.git-file-path:hover { text-decoration: underline; }
+
+/* ── Code Cell Decorations ─────────────────────────────────── */
+.code-cell-separator {
+  border-top: 2px solid var(--accent) !important;
+  margin-top: 2px;
+}
+.code-cell-glyph {
+  background: var(--accent);
+  width: 3px !important;
+  margin-left: 4px;
+  border-radius: 1px;
+}
+.cell-result-text {
+  color: var(--accent-green);
+  font-style: italic;
+  opacity: 0.85;
+  font-size: 0.9em;
+}
+.cell-result-running {
+  color: var(--accent-blue);
+  font-style: italic;
+  opacity: 0.7;
+  font-size: 0.9em;
+}
+.cell-result-error {
+  color: var(--accent-red);
+  font-style: italic;
+  opacity: 0.85;
+  font-size: 0.9em;
+}
+
+/* ── Variable Explorer ─────────────────────────────────────── */
+.variable-explorer { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+.variable-explorer-header {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 10px; font-size: 11px; font-weight: 600;
+  text-transform: uppercase; color: var(--text-secondary);
+  border-bottom: 1px solid var(--border);
+}
+.variable-refresh-btn {
+  margin-left: auto; background: none; border: none;
+  color: var(--text-secondary); cursor: pointer; padding: 2px;
+}
+.variable-refresh-btn:hover { color: var(--text-primary); }
+.variable-error {
+  padding: 8px 10px; color: var(--accent-red); font-size: 12px;
+}
+.variable-empty {
+  padding: 16px; text-align: center; color: var(--text-muted); font-size: 12px;
+}
+.variable-hint { font-size: 11px; margin-top: 4px; opacity: 0.7; }
+.variable-table { flex: 1; overflow-y: auto; font-size: 12px; }
+.variable-table-header {
+  display: flex; padding: 4px 8px; font-weight: 600;
+  color: var(--text-secondary); font-size: 11px;
+  border-bottom: 1px solid var(--border); position: sticky; top: 0;
+  background: var(--bg-secondary);
+}
+.variable-row {
+  display: flex; padding: 3px 8px; cursor: default;
+}
+.variable-row:hover { background: var(--bg-hover); }
+.var-col-name { flex: 0 0 30%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.var-col-type { flex: 0 0 25%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); }
+.var-col-value { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); }
+.var-name { color: var(--accent); font-weight: 500; }
+.var-type { font-style: italic; }
+
+/* ── Plot Pane ─────────────────────────────────────────────── */
+.plot-pane { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+.plot-pane-expanded { position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 100; background: var(--bg-primary); }
+.plot-pane-toolbar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 8px; border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.plot-pane-title { font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--text-secondary); }
+.plot-pane-counter { font-size: 11px; color: var(--text-muted); }
+.plot-pane-actions { margin-left: auto; display: flex; gap: 2px; }
+.plot-pane-btn {
+  background: none; border: none; cursor: pointer;
+  color: var(--text-secondary); padding: 3px 5px; border-radius: 3px;
+}
+.plot-pane-btn:hover:not(:disabled) { background: var(--bg-hover); color: var(--text-primary); }
+.plot-pane-btn:disabled { opacity: 0.3; cursor: default; }
+.plot-pane-content {
+  flex: 1; overflow: auto; display: flex;
+  align-items: center; justify-content: center;
+  padding: 8px;
+}
+.plot-pane-empty {
+  text-align: center; color: var(--text-muted); font-size: 12px;
+}
+.plot-pane-hint { font-size: 11px; margin-top: 4px; opacity: 0.7; }
+.plot-pane-display {
+  display: flex; align-items: center; justify-content: center;
+  width: 100%; height: 100%;
+}
+.plot-pane-image {
+  max-width: 100%; max-height: 100%;
+  object-fit: contain; border-radius: 4px;
+}
+.plot-pane-iframe {
+  width: 100%; height: 100%; border: none;
+  background: white; border-radius: 4px;
+}
+
 /* ── Outline Panel ──────────────────────────────────────────── */
 .outline-panel { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
 .outline-header {

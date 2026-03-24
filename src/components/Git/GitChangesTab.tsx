@@ -11,6 +11,7 @@ import {
   RotateCw,
 } from "lucide-react";
 import { useIdeStore } from "../../stores/useIdeStore";
+import { DiffViewer } from "./DiffViewer";
 
 export function GitChangesTab() {
   const workspacePath = useIdeStore((s) => s.workspacePath);
@@ -24,6 +25,7 @@ export function GitChangesTab() {
   const [commitMsg, setCommitMsg] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [diffFile, setDiffFile] = useState<{ path: string; status: string } | null>(null);
 
   const staged = gitFiles.filter((f) => f.staged);
   const unstaged = gitFiles.filter((f) => !f.staged && f.status !== "untracked");
@@ -125,6 +127,16 @@ export function GitChangesTab() {
     }
   };
 
+  if (diffFile) {
+    return (
+      <DiffViewer
+        filePath={diffFile.path}
+        fileStatus={diffFile.status}
+        onClose={() => setDiffFile(null)}
+      />
+    );
+  }
+
   return (
     <>
       {/* Header with branch and sync buttons */}
@@ -197,7 +209,7 @@ export function GitChangesTab() {
             {staged.map((f) => (
               <div key={`s-${f.path}`} className="git-file-item">
                 {statusIcon(f.status)}
-                <span className="git-file-path">{f.path}</span>
+                <span className="git-file-path" onClick={() => setDiffFile({ path: f.path, status: f.status })} title="View diff">{f.path}</span>
                 <button className="git-file-action" onClick={() => unstageFile(f.path)} title="Unstage">
                   <Minus size={12} />
                 </button>
@@ -219,7 +231,7 @@ export function GitChangesTab() {
             {[...unstaged, ...untracked].map((f) => (
               <div key={`u-${f.path}`} className="git-file-item">
                 {statusIcon(f.status)}
-                <span className="git-file-path">{f.path}</span>
+                <span className="git-file-path" onClick={() => setDiffFile({ path: f.path, status: f.status })} title="View diff">{f.path}</span>
                 <button className="git-file-action" onClick={() => stageFile(f.path)} title="Stage">
                   <Plus size={12} />
                 </button>

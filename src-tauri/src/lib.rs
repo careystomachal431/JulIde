@@ -46,6 +46,7 @@ pub fn run() {
             julia::julia_precompile,
             julia::julia_clean,
             julia::julia_kill,
+            julia::julia_eval,
             julia::julia_set_path,
             julia::julia_pkg_add,
             julia::julia_pkg_rm,
@@ -107,6 +108,7 @@ pub fn run() {
             git::git_push,
             git::git_pull,
             git::git_ahead_behind,
+            git::git_show_file_at_head,
             // Git Auth
             git_auth::git_auth_save_token,
             git_auth::git_auth_get_token,

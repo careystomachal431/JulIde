@@ -579,3 +579,24 @@ pub fn git_ahead_behind(workspace_path: String) -> Result<(usize, usize), String
         .map_err(|e| e.to_string())?;
     Ok((ahead, behind))
 }
+
+/// Retrieve a file's content from HEAD (or empty string for new files).
+#[tauri::command]
+pub fn git_show_file_at_head(workspace_path: String, file_path: String) -> Result<String, String> {
+    let repo = open_repo(&workspace_path)?;
+    let head = match repo.head() {
+        Ok(h) => h,
+        Err(_) => return Ok(String::new()), // No commits yet
+    };
+    let tree = head
+        .peel_to_tree()
+        .map_err(|e| e.to_string())?;
+    let entry = match tree.get_path(Path::new(&file_path)) {
+        Ok(e) => e,
+        Err(_) => return Ok(String::new()), // File doesn't exist in HEAD (new file)
+    };
+    let blob = repo
+        .find_blob(entry.id())
+        .map_err(|e| e.to_string())?;
+    Ok(String::from_utf8_lossy(blob.content()).to_string())
+}

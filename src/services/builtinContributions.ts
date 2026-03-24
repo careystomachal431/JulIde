@@ -64,6 +64,16 @@ async function getComponent(name: string): Promise<React.ComponentType> {
       _componentCache[name] = m.OutlinePanel;
       return m.OutlinePanel;
     }
+    case "VariableExplorer": {
+      const m = await import("../components/Variables/VariableExplorer");
+      _componentCache[name] = m.VariableExplorer;
+      return m.VariableExplorer;
+    }
+    case "PlotPane": {
+      const m = await import("../components/PlotPane/PlotPane");
+      _componentCache[name] = m.PlotPane;
+      return m.PlotPane;
+    }
     default:
       throw new Error(`Unknown component: ${name}`);
   }
@@ -84,12 +94,14 @@ export async function registerBuiltinContributions() {
     GitPanel,
     ContainerPanel,
     OutlinePanel,
+    VariableExplorer,
   ] = await Promise.all([
     getComponent("FileExplorer"),
     getComponent("SearchPanel"),
     getComponent("GitPanel"),
     getComponent("ContainerPanel"),
     getComponent("OutlinePanel"),
+    getComponent("VariableExplorer"),
   ]);
 
   store.registerSidebarPanel({
@@ -127,6 +139,13 @@ export async function registerBuiltinContributions() {
     order: 15,
     component: OutlinePanel,
   });
+  store.registerSidebarPanel({
+    id: "variables",
+    label: "Variables",
+    icon: "Eye",
+    order: 25,
+    component: VariableExplorer,
+  });
 
   // ─── Bottom Panels ──────────────────────────────────────────────────────────
 
@@ -136,12 +155,14 @@ export async function registerBuiltinContributions() {
     DebugPanel,
     PackageManager,
     ContainerLogsPanel,
+    PlotPane,
   ] = await Promise.all([
     getComponent("OutputPanel"),
     getComponent("TerminalPanel"),
     getComponent("DebugPanel"),
     getComponent("PackageManager"),
     getComponent("ContainerLogsPanel"),
+    getComponent("PlotPane"),
   ]);
 
   store.registerBottomPanel({
@@ -177,6 +198,12 @@ export async function registerBuiltinContributions() {
     label: "Packages",
     order: 50,
     component: PackageManager,
+  });
+  store.registerBottomPanel({
+    id: "plots",
+    label: "Plots",
+    order: 15,
+    component: PlotPane,
   });
   store.registerBottomPanel({
     id: "container-logs",
@@ -501,5 +528,30 @@ function registerBuiltinCommands() {
     id: "outline.show",
     label: "Show Outline",
     execute: () => ide().setActiveSidebarView("outline"),
+  });
+
+  store.registerCommand({
+    id: "variables.show",
+    label: "Show Variable Explorer",
+    execute: () => ide().setActiveSidebarView("variables"),
+  });
+
+  store.registerCommand({
+    id: "plots.show",
+    label: "Show Plot Pane",
+    execute: () => ide().setActiveBottomPanel("plots"),
+  });
+
+  store.registerCommand({
+    id: "editor.run-cell",
+    label: "Run Code Cell (Ctrl+Enter)",
+    shortcut: "⌘↵",
+    execute: () => {
+      // Trigger via the editor action
+      const editor = ide().editorInstance;
+      if (editor) {
+        editor.trigger("command-palette", "editor.action.triggerSuggest", null);
+      }
+    },
   });
 }

@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback } from "react";
 import Editor, { OnMount, BeforeMount } from "@monaco-editor/react";
 import type * as Monaco from "monaco-editor";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { useIdeStore } from "../../stores/useIdeStore";
 import { useSettingsStore } from "../../stores/useSettingsStore";
 import { themes } from "../../themes/themes";
@@ -10,8 +11,49 @@ import { LATEX_UNICODE } from "./latexUnicode";
 import { lspClient } from "../../lsp/LspClient";
 import { registerJuliaLspProviders, setMonacoInstance } from "../../lsp/juliaProviders";
 import { PTY_SESSION_ID } from "../../constants";
+import type { JuliaOutputEvent } from "../../types";
 
 const SAVE_DEBOUNCE_MS = 800;
+
+// ── Code Cell Helpers ───────────────────────────────────────────────────
+
+/** Find the range of the code cell containing the given line number. */
+function getCellRange(model: Monaco.editor.ITextModel, lineNumber: number): { startLine: number; endLine: number } {
+  const lineCount = model.getLineCount();
+  let startLine = 1;
+  let endLine = lineCount;
+
+  // Scan backward for cell start (## marker or beginning of file)
+  for (let i = lineNumber; i >= 1; i--) {
+    const content = model.getLineContent(i).trimStart();
+    if (content.startsWith("##") && i !== lineNumber) {
+      startLine = i + 1;
+      break;
+    }
+    if (content.startsWith("##") && i === lineNumber) {
+      startLine = i + 1;
+      break;
+    }
+    if (i === 1) startLine = 1;
+  }
+
+  // If the current line IS a ## marker, the cell starts on the next line
+  const currentContent = model.getLineContent(lineNumber).trimStart();
+  if (currentContent.startsWith("##")) {
+    startLine = lineNumber + 1;
+  }
+
+  // Scan forward for cell end (next ## marker or end of file)
+  for (let i = startLine; i <= lineCount; i++) {
+    const content = model.getLineContent(i).trimStart();
+    if (content.startsWith("##") && i > startLine) {
+      endLine = i - 1;
+      break;
+    }
+  }
+
+  return { startLine, endLine };
+}
 
 function getLanguage(filename: string): string {
   const ext = filename.split(".").pop()?.toLowerCase();
@@ -59,6 +101,8 @@ export function MonacoEditor() {
   const lspVersionRef = useRef<Map<string, number>>(new Map());
   const decorationsRef = useRef<Monaco.editor.IEditorDecorationsCollection | null>(null);
   const debugDecoRef = useRef<Monaco.editor.IEditorDecorationsCollection | null>(null);
+  const cellDecoRef = useRef<Monaco.editor.IEditorDecorationsCollection | null>(null);
+  const cellResultDecoRef = useRef<Monaco.editor.IEditorDecorationsCollection | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   const handleBeforeMount: BeforeMount = (monaco) => {
@@ -125,6 +169,94 @@ export function MonacoEditor() {
       ]);
     });
 
+    // Ctrl/Cmd+Enter: execute current code cell
+    editor.addCommand(
+      monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter,
+      () => {
+        const model = editor.getModel();
+        const position = editor.getPosition();
+        if (!model || !position || !activeTab?.path.endsWith(".jl")) return;
+
+        const { startLine, endLine } = getCellRange(model, position.lineNumber);
+        const lines: string[] = [];
+        for (let i = startLine; i <= endLine; i++) {
+          lines.push(model.getLineContent(i));
+        }
+        const code = lines.join("\n").trim();
+        if (!code) return;
+
+        // Show executing indicator
+        if (cellResultDecoRef.current) {
+          cellResultDecoRef.current.set([{
+            range: { startLineNumber: endLine, startColumn: 1, endLineNumber: endLine, endColumn: 1 },
+            options: {
+              isWholeLine: true,
+              after: {
+                content: "  ... running",
+                inlineClassName: "cell-result-running",
+              },
+            },
+          }]);
+        }
+
+        // Collect output from this eval
+        const outputLines: string[] = [];
+        let resultUnlisten: (() => void) | null = null;
+
+        listen<JuliaOutputEvent>("julia-output", (event) => {
+          const { kind, text } = event.payload;
+          if (kind === "stdout" && text) {
+            outputLines.push(text);
+          } else if (kind === "stderr" && text) {
+            outputLines.push(text);
+          } else if (kind === "done") {
+            // Show result inline
+            const resultText = outputLines.join("; ").slice(0, 120) || "(no output)";
+            if (cellResultDecoRef.current) {
+              cellResultDecoRef.current.set([{
+                range: { startLineNumber: endLine, startColumn: 1, endLineNumber: endLine, endColumn: 1 },
+                options: {
+                  isWholeLine: true,
+                  after: {
+                    content: `  => ${resultText}`,
+                    inlineClassName: "cell-result-text",
+                  },
+                },
+              }]);
+            }
+            // Also send to output panel
+            const store = useIdeStore.getState();
+            store.setIsRunning(false);
+            resultUnlisten?.();
+          }
+        }).then((fn) => { resultUnlisten = fn; });
+
+        // Fire the eval
+        const store = useIdeStore.getState();
+        store.setIsRunning(true);
+        store.appendOutput({ kind: "info", text: `Cell [Ln ${startLine}-${endLine}]` });
+        invoke("julia_eval", {
+          code,
+          projectPath: store.workspacePath ?? null,
+        }).catch((e) => {
+          store.appendOutput({ kind: "stderr", text: String(e) });
+          store.setIsRunning(false);
+          if (cellResultDecoRef.current) {
+            cellResultDecoRef.current.set([{
+              range: { startLineNumber: endLine, startColumn: 1, endLineNumber: endLine, endColumn: 1 },
+              options: {
+                isWholeLine: true,
+                after: {
+                  content: `  => Error: ${String(e).slice(0, 80)}`,
+                  inlineClassName: "cell-result-error",
+                },
+              },
+            }]);
+          }
+        });
+      }
+    );
+
     // Track cursor position for status bar
     editor.onDidChangeCursorPosition((e) => {
       setCursorPosition(e.position.lineNumber, e.position.column);
@@ -138,6 +270,8 @@ export function MonacoEditor() {
 
     decorationsRef.current = editor.createDecorationsCollection([]);
     debugDecoRef.current = editor.createDecorationsCollection([]);
+    cellDecoRef.current = editor.createDecorationsCollection([]);
+    cellResultDecoRef.current = editor.createDecorationsCollection([]);
   };
 
   const saveFile = useCallback(
@@ -223,6 +357,36 @@ export function MonacoEditor() {
       debugDecoRef.current.set([]);
     }
   }, [debug.isPaused, debug.currentLine]);
+
+  // Update code cell separator decorations for Julia files
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor || !cellDecoRef.current || !activeTab) return;
+    if (!activeTab.path.endsWith(".jl")) {
+      cellDecoRef.current.set([]);
+      return;
+    }
+
+    const model = editor.getModel();
+    if (!model) return;
+
+    const decos: Monaco.editor.IModelDeltaDecoration[] = [];
+    const lineCount = model.getLineCount();
+    for (let i = 1; i <= lineCount; i++) {
+      const content = model.getLineContent(i).trimStart();
+      if (content.startsWith("##")) {
+        decos.push({
+          range: { startLineNumber: i, startColumn: 1, endLineNumber: i, endColumn: 1 },
+          options: {
+            isWholeLine: true,
+            className: "code-cell-separator",
+            glyphMarginClassName: "code-cell-glyph",
+          },
+        });
+      }
+    }
+    cellDecoRef.current.set(decos);
+  }, [activeTab?.content, activeTab?.path]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleChange = useCallback(
     (value: string | undefined) => {

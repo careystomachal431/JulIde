@@ -6,6 +6,7 @@ import {
   Container,
   Puzzle,
   List,
+  Eye,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useIdeStore } from "../../stores/useIdeStore";
@@ -19,6 +20,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
   Container,
   Puzzle,
   List,
+  Eye,
 };
 
 export function ActivityBar() {

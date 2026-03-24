@@ -565,6 +565,87 @@ pub async fn julia_pkg_rm(
     Ok(())
 }
 
+/// Evaluate a code snippet and capture output (for inline code cells).
+/// Like julia_run but takes code directly instead of a file path.
+#[tauri::command]
+pub async fn julia_eval(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, SharedJuliaState>,
+    code: String,
+    project_path: Option<String>,
+) -> Result<(), String> {
+    use tauri::Emitter;
+    use tokio::io::AsyncBufReadExt;
+
+    let julia = find_julia()
+        .await
+        .ok_or_else(|| "Julia not found. Install Julia or set JULIA_PATH.".to_string())?;
+
+    let script = format!("{}\n{}", MIME_HELPER, code);
+
+    let mut cmd = tokio::process::Command::new(&julia);
+    if let Some(ref proj) = project_path {
+        cmd.arg(format!("--project={}", proj));
+    }
+    cmd.arg("-e").arg(&script);
+    cmd.stdout(std::process::Stdio::piped());
+    cmd.stderr(std::process::Stdio::piped());
+    cmd.kill_on_drop(true);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000);
+    }
+
+    let mut child = cmd.spawn().map_err(|e| e.to_string())?;
+
+    {
+        let mut lock = state.lock().await;
+        lock.process_pid = child.id();
+    }
+
+    let stdout = child.stdout.take().unwrap();
+    let stderr = child.stderr.take().unwrap();
+    let app_out = app.clone();
+    let app_err = app.clone();
+    let app_done = app.clone();
+    let state_done = state.inner().clone();
+
+    tokio::spawn(async move {
+        let reader = tokio::io::BufReader::new(stdout);
+        let mut lines = reader.lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            let _ = app_out.emit("julia-output", JuliaOutputEvent {
+                kind: "stdout".into(), text: line, exit_code: None,
+            });
+        }
+    });
+
+    tokio::spawn(async move {
+        let reader = tokio::io::BufReader::new(stderr);
+        let mut lines = reader.lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            let _ = app_err.emit("julia-output", JuliaOutputEvent {
+                kind: "stderr".into(), text: line, exit_code: None,
+            });
+        }
+    });
+
+    tokio::spawn(async move {
+        let status = child.wait().await;
+        let code = status.map(|s| s.code().unwrap_or(-1)).unwrap_or(-1);
+        {
+            let mut lock = state_done.lock().await;
+            lock.process_pid = None;
+        }
+        let _ = app_done.emit("julia-output", JuliaOutputEvent {
+            kind: "done".into(), text: String::new(), exit_code: Some(code),
+        });
+    });
+
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn julia_set_path(path: String) -> Result<(), String> {
     let p = PathBuf::from(&path);
