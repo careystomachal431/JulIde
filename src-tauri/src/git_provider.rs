@@ -367,3 +367,109 @@ pub async fn git_provider_ci_status(
         _ => Err("Unknown provider".to_string()),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── detect_provider ────────────────────────────────────────────────────
+
+    #[test]
+    fn detect_provider_github() {
+        assert_eq!(detect_provider("https://github.com/user/repo.git"), Some("github".to_string()));
+    }
+
+    #[test]
+    fn detect_provider_github_ssh() {
+        assert_eq!(detect_provider("git@github.com:user/repo.git"), Some("github".to_string()));
+    }
+
+    #[test]
+    fn detect_provider_gitlab() {
+        assert_eq!(detect_provider("https://gitlab.com/user/repo.git"), Some("gitlab".to_string()));
+    }
+
+    #[test]
+    fn detect_provider_gitlab_self_hosted() {
+        assert_eq!(detect_provider("https://gitlab.mycompany.com/user/repo"), Some("gitlab".to_string()));
+    }
+
+    #[test]
+    fn detect_provider_unknown_defaults_to_gitea() {
+        assert_eq!(detect_provider("https://gitea.example.com/user/repo"), Some("gitea".to_string()));
+    }
+
+    // ── parse_owner_repo ───────────────────────────────────────────────────
+
+    #[test]
+    fn parse_owner_repo_https() {
+        assert_eq!(
+            parse_owner_repo("https://github.com/owner/repo.git"),
+            Some(("owner".to_string(), "repo".to_string()))
+        );
+    }
+
+    #[test]
+    fn parse_owner_repo_https_no_git_suffix() {
+        assert_eq!(
+            parse_owner_repo("https://github.com/owner/repo"),
+            Some(("owner".to_string(), "repo".to_string()))
+        );
+    }
+
+    #[test]
+    fn parse_owner_repo_ssh() {
+        assert_eq!(
+            parse_owner_repo("git@github.com:owner/repo.git"),
+            Some(("owner".to_string(), "repo".to_string()))
+        );
+    }
+
+    #[test]
+    fn parse_owner_repo_ssh_no_git_suffix() {
+        assert_eq!(
+            parse_owner_repo("git@gitlab.com:user/project"),
+            Some(("user".to_string(), "project".to_string()))
+        );
+    }
+
+    #[test]
+    fn parse_owner_repo_trailing_slash() {
+        assert_eq!(
+            parse_owner_repo("https://github.com/owner/repo/"),
+            Some(("owner".to_string(), "repo".to_string()))
+        );
+    }
+
+    // ── extract_api_base ───────────────────────────────────────────────────
+
+    #[test]
+    fn extract_api_base_github() {
+        assert_eq!(extract_api_base("https://github.com/user/repo"), "https://api.github.com");
+    }
+
+    #[test]
+    fn extract_api_base_gitlab() {
+        assert_eq!(extract_api_base("https://gitlab.com/user/repo"), "https://gitlab.com");
+    }
+
+    #[test]
+    fn extract_api_base_self_hosted_https() {
+        assert_eq!(extract_api_base("https://git.mycompany.com/user/repo"), "https://git.mycompany.com");
+    }
+
+    #[test]
+    fn extract_api_base_self_hosted_with_port() {
+        assert_eq!(extract_api_base("https://git.mycompany.com:8443/user/repo"), "https://git.mycompany.com:8443");
+    }
+
+    #[test]
+    fn extract_api_base_ssh_format() {
+        assert_eq!(extract_api_base("git@myhost.com:user/repo.git"), "https://myhost.com");
+    }
+
+    #[test]
+    fn extract_api_base_fallback() {
+        assert_eq!(extract_api_base("invalid-url"), "https://localhost");
+    }
+}

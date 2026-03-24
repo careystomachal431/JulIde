@@ -302,3 +302,39 @@ impl GitProvider for GitlabProvider {
         Ok(checks)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn val_str_present() {
+        let obj = json!({"title": "Fix bug"});
+        assert_eq!(val_str(&obj, "title"), "Fix bug");
+    }
+
+    #[test]
+    fn val_str_missing() {
+        let obj = json!({});
+        assert_eq!(val_str(&obj, "title"), "");
+    }
+
+    #[test]
+    fn val_u64_present() {
+        let obj = json!({"iid": 99});
+        assert_eq!(val_u64(&obj, "iid"), 99);
+    }
+
+    #[test]
+    fn val_u64_missing() {
+        let obj = json!({});
+        assert_eq!(val_u64(&obj, "iid"), 0);
+    }
+
+    #[test]
+    fn urlencoding_encodes_slash() {
+        let encoded = urlencoding_encode("owner/repo");
+        assert!(encoded.contains("%2F") || encoded.contains("%2f"));
+    }
+}

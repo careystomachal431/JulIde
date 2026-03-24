@@ -45,6 +45,9 @@ openssl-sys = { version = "0.9", features = ["vendored"], optional = true }
 [features]
 vendored-ssl = ["openssl-sys", "git2/vendored-openssl"]
 
+[dev-dependencies]
+tempfile = "3"
+
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 

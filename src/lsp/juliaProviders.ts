@@ -17,7 +17,7 @@ export function setMonacoInstance(m: typeof Monaco): void {
 // ── Coordinate conversion helpers ─────────────────────────────────────────────
 
 /** LSP 0-based position → Monaco 1-based IRange start */
-function lspRangeToMonaco(
+export function lspRangeToMonaco(
   range: { start: { line: number; character: number }; end: { line: number; character: number } }
 ): Monaco.IRange {
   return {
@@ -30,7 +30,7 @@ function lspRangeToMonaco(
 
 // ── LSP CompletionItemKind → Monaco CompletionItemKind mapping ────────────────
 
-const LSP_KIND: Record<number, number> = {
+export const LSP_KIND: Record<number, number> = {
   1:  17, // Text
   2:  0,  // Method
   3:  1,  // Function
@@ -71,7 +71,7 @@ function lspSeverityToMonaco(
 
 // ── Hover content normalization ───────────────────────────────────────────────
 
-function flattenHoverContents(
+export function flattenHoverContents(
   contents: string | { kind: string; value: string } | Array<string | { language: string; value: string }>
 ): string {
   if (typeof contents === "string") return contents;

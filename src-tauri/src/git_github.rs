@@ -314,3 +314,45 @@ impl GitProvider for GithubProvider {
         Ok(results)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn val_str_present() {
+        let obj = json!({"name": "test-repo"});
+        assert_eq!(val_str(&obj, "name"), "test-repo");
+    }
+
+    #[test]
+    fn val_str_missing() {
+        let obj = json!({});
+        assert_eq!(val_str(&obj, "name"), "");
+    }
+
+    #[test]
+    fn val_str_non_string() {
+        let obj = json!({"count": 42});
+        assert_eq!(val_str(&obj, "count"), "");
+    }
+
+    #[test]
+    fn val_u64_present() {
+        let obj = json!({"number": 42});
+        assert_eq!(val_u64(&obj, "number"), 42);
+    }
+
+    #[test]
+    fn val_u64_missing() {
+        let obj = json!({});
+        assert_eq!(val_u64(&obj, "number"), 0);
+    }
+
+    #[test]
+    fn val_u64_non_number() {
+        let obj = json!({"number": "not a number"});
+        assert_eq!(val_u64(&obj, "number"), 0);
+    }
+}

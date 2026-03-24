@@ -145,3 +145,76 @@ pub async fn dialog_save_file(
         .blocking_save_file();
     Ok(path.map(|p| p.to_string()))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn build_tree_basic_structure() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("main.jl"), "").unwrap();
+        std::fs::write(dir.path().join("README.md"), "").unwrap();
+        std::fs::create_dir(dir.path().join("src")).unwrap();
+        std::fs::write(dir.path().join("src").join("lib.jl"), "").unwrap();
+
+        let tree = build_tree(dir.path());
+
+        assert!(tree.is_dir);
+        let children = tree.children.unwrap();
+        // "src" dir should come before files
+        assert!(children[0].is_dir);
+        assert_eq!(children[0].name, "src");
+    }
+
+    #[test]
+    fn build_tree_dirs_before_files() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("z_file.txt"), "").unwrap();
+        std::fs::create_dir(dir.path().join("a_dir")).unwrap();
+
+        let tree = build_tree(dir.path());
+        let children = tree.children.unwrap();
+
+        assert!(children[0].is_dir, "directory should come first");
+        assert_eq!(children[0].name, "a_dir");
+        assert!(!children[1].is_dir);
+        assert_eq!(children[1].name, "z_file.txt");
+    }
+
+    #[test]
+    fn build_tree_skips_hidden_and_noise_dirs() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        std::fs::create_dir(dir.path().join("node_modules")).unwrap();
+        std::fs::create_dir(dir.path().join("target")).unwrap();
+        std::fs::create_dir(dir.path().join("__pycache__")).unwrap();
+        std::fs::create_dir(dir.path().join("src")).unwrap();
+        std::fs::write(dir.path().join("main.jl"), "").unwrap();
+
+        let tree = build_tree(dir.path());
+        let children = tree.children.unwrap();
+        let names: Vec<&str> = children.iter().map(|c| c.name.as_str()).collect();
+
+        assert!(!names.contains(&".git"));
+        assert!(!names.contains(&"node_modules"));
+        assert!(!names.contains(&"target"));
+        assert!(!names.contains(&"__pycache__"));
+        assert!(names.contains(&"src"));
+        assert!(names.contains(&"main.jl"));
+    }
+
+    #[test]
+    fn build_tree_alphabetical_within_groups() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("c.jl"), "").unwrap();
+        std::fs::write(dir.path().join("a.jl"), "").unwrap();
+        std::fs::write(dir.path().join("b.jl"), "").unwrap();
+
+        let tree = build_tree(dir.path());
+        let children = tree.children.unwrap();
+        let names: Vec<&str> = children.iter().map(|c| c.name.as_str()).collect();
+
+        assert_eq!(names, vec!["a.jl", "b.jl", "c.jl"]);
+    }
+}

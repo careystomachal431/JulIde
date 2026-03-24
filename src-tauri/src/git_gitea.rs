@@ -315,3 +315,33 @@ impl GitProvider for GiteaProvider {
         Ok(checks)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn val_str_present() {
+        let obj = json!({"name": "my-repo"});
+        assert_eq!(val_str(&obj, "name"), "my-repo");
+    }
+
+    #[test]
+    fn val_str_missing() {
+        let obj = json!({});
+        assert_eq!(val_str(&obj, "name"), "");
+    }
+
+    #[test]
+    fn val_u64_present() {
+        let obj = json!({"number": 7});
+        assert_eq!(val_u64(&obj, "number"), 7);
+    }
+
+    #[test]
+    fn val_u64_missing() {
+        let obj = json!({});
+        assert_eq!(val_u64(&obj, "number"), 0);
+    }
+}

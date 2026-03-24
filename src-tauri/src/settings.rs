@@ -108,3 +108,61 @@ pub fn settings_add_recent_workspace(workspace_path: String) -> Result<(), Strin
     settings.recent_workspaces.truncate(10);
     settings_save(settings)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_settings_values() {
+        let s = Settings::default();
+        assert_eq!(s.font_size, 14);
+        assert_eq!(s.tab_size, 4);
+        assert_eq!(s.theme, "julide-dark");
+        assert!(s.minimap_enabled);
+        assert_eq!(s.word_wrap, "off");
+        assert!(s.auto_save);
+        assert_eq!(s.terminal_font_size, 13);
+        assert_eq!(s.container_runtime, "auto");
+        assert_eq!(s.pluto_port, 3000);
+        assert!(s.recent_workspaces.is_empty());
+    }
+
+    #[test]
+    fn serde_round_trip() {
+        let settings = Settings::default();
+        let json = serde_json::to_string(&settings).unwrap();
+        let deserialized: Settings = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.font_size, settings.font_size);
+        assert_eq!(deserialized.theme, settings.theme);
+        assert_eq!(deserialized.pluto_port, settings.pluto_port);
+    }
+
+    #[test]
+    fn deserialize_partial_json_gets_defaults() {
+        let json = r#"{"fontSize": 20, "theme": "julide-light"}"#;
+        let settings: Settings = serde_json::from_str(json).unwrap();
+        assert_eq!(settings.font_size, 20);
+        assert_eq!(settings.theme, "julide-light");
+        // Missing fields should get defaults
+        assert_eq!(settings.tab_size, 4);
+        assert!(settings.minimap_enabled);
+        assert_eq!(settings.pluto_port, 3000);
+    }
+
+    #[test]
+    fn camel_case_serialization() {
+        let settings = Settings::default();
+        let json = serde_json::to_string(&settings).unwrap();
+        // serde(rename_all = "camelCase") should produce camelCase keys
+        assert!(json.contains("\"fontSize\""));
+        assert!(json.contains("\"tabSize\""));
+        assert!(json.contains("\"minimapEnabled\""));
+        assert!(json.contains("\"wordWrap\""));
+        assert!(json.contains("\"autoSave\""));
+        assert!(json.contains("\"terminalFontSize\""));
+        // Should NOT contain snake_case
+        assert!(!json.contains("\"font_size\""));
+        assert!(!json.contains("\"tab_size\""));
+    }
+}

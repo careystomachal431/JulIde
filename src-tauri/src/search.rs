@@ -148,3 +148,143 @@ pub fn fs_search_files(
 
     Ok(results)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn binary_detection_with_null_byte() {
+        assert!(is_likely_binary(&[0x48, 0x65, 0x6c, 0x00, 0x6f]));
+    }
+
+    #[test]
+    fn binary_detection_normal_text() {
+        assert!(!is_likely_binary(b"Hello, world!"));
+    }
+
+    #[test]
+    fn binary_detection_empty() {
+        assert!(!is_likely_binary(&[]));
+    }
+
+    #[test]
+    fn binary_detection_null_at_position_511() {
+        let mut buf = vec![0x41u8; 512];
+        buf[511] = 0x00;
+        assert!(is_likely_binary(&buf));
+    }
+
+    #[test]
+    fn binary_detection_null_after_512_not_detected() {
+        let mut buf = vec![0x41u8; 600];
+        buf[513] = 0x00;
+        // is_likely_binary only checks first 512 bytes
+        assert!(!is_likely_binary(&buf));
+    }
+
+    /// Helper: create a workspace subdir inside the temp dir (avoids hidden-dir filtering
+    /// when tempfile creates dirs with names starting with `.`).
+    fn make_workspace(dir: &tempfile::TempDir) -> std::path::PathBuf {
+        let ws = dir.path().join("workspace");
+        std::fs::create_dir(&ws).unwrap();
+        ws
+    }
+
+    #[test]
+    fn search_in_temp_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let ws = make_workspace(&dir);
+        std::fs::write(ws.join("test.jl"), "println(\"hello\")\nprintln(\"world\")\n").unwrap();
+
+        let results = fs_search_files(
+            ws.to_string_lossy().to_string(),
+            "hello".to_string(),
+            false,
+            true,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].line, 1);
+        assert_eq!(results[0].col, 10);
+        assert_eq!(results[0].match_text, "hello");
+    }
+
+    #[test]
+    fn search_case_insensitive() {
+        let dir = tempfile::tempdir().unwrap();
+        let ws = make_workspace(&dir);
+        std::fs::write(ws.join("test.jl"), "Hello World\n").unwrap();
+
+        let results = fs_search_files(
+            ws.to_string_lossy().to_string(),
+            "hello".to_string(),
+            false,
+            false,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(results.len(), 1);
+    }
+
+    #[test]
+    fn search_with_regex() {
+        let dir = tempfile::tempdir().unwrap();
+        let ws = make_workspace(&dir);
+        std::fs::write(ws.join("test.jl"), "foo123bar\nfoo456bar\n").unwrap();
+
+        let results = fs_search_files(
+            ws.to_string_lossy().to_string(),
+            r"foo\d+bar".to_string(),
+            true,
+            true,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(results.len(), 2);
+    }
+
+    #[test]
+    fn search_with_glob_filter() {
+        let dir = tempfile::tempdir().unwrap();
+        let ws = make_workspace(&dir);
+        std::fs::write(ws.join("test.jl"), "target\n").unwrap();
+        std::fs::write(ws.join("test.txt"), "target\n").unwrap();
+
+        let results = fs_search_files(
+            ws.to_string_lossy().to_string(),
+            "target".to_string(),
+            false,
+            true,
+            Some("*.jl".to_string()),
+        )
+        .unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert!(results[0].file.ends_with("test.jl"));
+    }
+
+    #[test]
+    fn search_skips_binary_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let ws = make_workspace(&dir);
+        std::fs::write(ws.join("binary.bin"), &[0x48, 0x65, 0x00, 0x6c]).unwrap();
+        std::fs::write(ws.join("text.jl"), "hello\n").unwrap();
+
+        let results = fs_search_files(
+            ws.to_string_lossy().to_string(),
+            "hel".to_string(),
+            false,
+            true,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert!(results[0].file.ends_with("text.jl"));
+    }
+}

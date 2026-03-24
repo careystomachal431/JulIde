@@ -204,3 +204,49 @@ pub async fn pluto_stop() -> Result<(), String> {
     state.process = None; // kill_on_drop terminates the process
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extract_url_127_0_0_1() {
+        let line = "Go to http://127.0.0.1:1234/edit?id=abc in your browser";
+        assert_eq!(
+            extract_pluto_url(line),
+            Some("http://127.0.0.1:1234/edit?id=abc".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_url_localhost() {
+        let line = "Listening on http://localhost:3000/";
+        assert_eq!(
+            extract_pluto_url(line),
+            Some("http://localhost:3000/".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_url_none_when_no_url() {
+        assert_eq!(extract_pluto_url("Some random log line"), None);
+    }
+
+    #[test]
+    fn extract_url_trims_at_quote() {
+        let line = r#"URL is "http://127.0.0.1:1234/edit""#;
+        assert_eq!(
+            extract_pluto_url(line),
+            Some("http://127.0.0.1:1234/edit".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_url_trims_at_whitespace() {
+        let line = "http://localhost:5678/path rest of line";
+        assert_eq!(
+            extract_pluto_url(line),
+            Some("http://localhost:5678/path".to_string())
+        );
+    }
+}
