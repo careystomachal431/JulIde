@@ -21,6 +21,15 @@ export function SearchPanel() {
   const [fileFilter, setFileFilter] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Normalize file filter: ".jl" or "jl" → "*.jl", leave "*.jl" or "*" as-is
+  const normalizeGlob = (filter: string): string | null => {
+    const f = filter.trim();
+    if (!f) return null;
+    if (f.includes("*")) return f;
+    if (f.startsWith(".")) return `*${f}`;
+    return `*.${f}`;
+  };
+
   const doSearch = useCallback(async () => {
     if (!query.trim() || !workspacePath) return;
     setIsSearching(true);
@@ -30,7 +39,7 @@ export function SearchPanel() {
         query: query,
         isRegex: useRegex,
         caseSensitive: caseSensitive,
-        fileGlob: fileFilter || null,
+        fileGlob: normalizeGlob(fileFilter),
       });
       setSearchResults(results);
     } catch (e) {
@@ -51,7 +60,7 @@ export function SearchPanel() {
         replacement: replaceQuery,
         isRegex: useRegex,
         caseSensitive,
-        fileGlob: fileFilter || null,
+        fileGlob: normalizeGlob(fileFilter),
       });
       setReplaceMessage(`Replaced ${totalReplacements} occurrences in ${filesModified} files`);
       // Re-run search to update results
