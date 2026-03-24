@@ -20,6 +20,8 @@ export function StatusBar() {
   const setJuliaVersion = useIdeStore((s) => s.setJuliaVersion);
   const setAvailableEnvs = useIdeStore((s) => s.setAvailableEnvs);
 
+  const cursorLine = useIdeStore((s) => s.cursorLine);
+  const cursorColumn = useIdeStore((s) => s.cursorColumn);
   const workspacePath = useIdeStore((s) => s.workspacePath);
   const activeTab = openTabs.find((t) => t.id === activeTabId);
   const [gitBranch, setGitBranch] = useState("");
@@ -99,6 +101,11 @@ export function StatusBar() {
           .map((item) => (
             <StatusBarPluginItem key={item.id} item={item} />
           ))}
+        {activeTab && (
+          <span className="status-item status-cursor" title="Cursor position">
+            Ln {cursorLine}, Col {cursorColumn}
+          </span>
+        )}
         {activeTab && (
           <span className="status-item status-language">
             {activeTab.name.endsWith(".jl") ? "Julia" : "Text"}

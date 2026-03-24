@@ -49,6 +49,7 @@ export function MonacoEditor() {
   const debug = useIdeStore((s) => s.debug);
 
   const setEditorInstance = useIdeStore((s) => s.setEditorInstance);
+  const setCursorPosition = useIdeStore((s) => s.setCursorPosition);
   const settings = useSettingsStore((s) => s.settings);
 
   const activeTab = openTabs.find((t) => t.id === activeTabId) ?? null;
@@ -122,6 +123,11 @@ export function MonacoEditor() {
           text: unicode,
         },
       ]);
+    });
+
+    // Track cursor position for status bar
+    editor.onDidChangeCursorPosition((e) => {
+      setCursorPosition(e.position.lineNumber, e.position.column);
     });
 
     // ResizeObserver for layout
@@ -292,6 +298,7 @@ export function MonacoEditor() {
             bracketPairs: true,
             indentation: true,
           },
+          stickyScroll: { enabled: true },
           padding: { top: 8, bottom: 8 },
         }}
       />

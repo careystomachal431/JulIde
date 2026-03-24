@@ -90,6 +90,11 @@ interface IdeStore {
   lspErrorMessage: string | null;
   setLspStatus: (status: "off" | "starting" | "ready" | "error", message?: string) => void;
 
+  // Cursor position
+  cursorLine: number;
+  cursorColumn: number;
+  setCursorPosition: (line: number, column: number) => void;
+
   // Editor instance (for triggering actions like Find from outside)
   editorInstance: Monaco.editor.IStandaloneCodeEditor | null;
   setEditorInstance: (editor: Monaco.editor.IStandaloneCodeEditor | null) => void;
@@ -374,6 +379,15 @@ export const useIdeStore = create<IdeStore>()(
       set((s) => {
         s.lspStatus = status;
         s.lspErrorMessage = message ?? null;
+      }),
+
+    // Cursor position
+    cursorLine: 1,
+    cursorColumn: 1,
+    setCursorPosition: (line, column) =>
+      set((s) => {
+        s.cursorLine = line;
+        s.cursorColumn = column;
       }),
 
     // Editor instance

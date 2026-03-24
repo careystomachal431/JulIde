@@ -15,6 +15,7 @@ export const DEFAULT_KEYBINDINGS: Record<string, Keybinding> = {
   "toggle-terminal": { key: "`", ctrlOrCmd: true, label: "⌃`" },
   "open-settings": { key: ",", ctrlOrCmd: true, label: "⌘," },
   "run-file": { key: "F5", ctrlOrCmd: true, label: "⌃F5" },
+  "go-to-line": { key: "g", ctrlOrCmd: true, label: "⌘G" },
 };
 
 export function matchesKeybinding(e: KeyboardEvent, binding: Keybinding): boolean {

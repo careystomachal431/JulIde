@@ -5,6 +5,7 @@ import {
   Settings,
   Container,
   Puzzle,
+  List,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useIdeStore } from "../../stores/useIdeStore";
@@ -17,6 +18,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
   GitBranch,
   Container,
   Puzzle,
+  List,
 };
 
 export function ActivityBar() {

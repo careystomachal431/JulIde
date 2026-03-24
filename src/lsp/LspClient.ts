@@ -65,6 +65,35 @@ export interface LspSignatureHelp {
   activeParameter?: number;
 }
 
+export interface LspTextEdit {
+  range: LspRange;
+  newText: string;
+}
+
+export interface LspWorkspaceEdit {
+  changes?: Record<string, LspTextEdit[]>;
+  documentChanges?: Array<{
+    textDocument: { uri: string; version?: number | null };
+    edits: LspTextEdit[];
+  }>;
+}
+
+export interface LspCodeAction {
+  title: string;
+  kind?: string;
+  diagnostics?: LspDiagnostic[];
+  edit?: LspWorkspaceEdit;
+  command?: { title: string; command: string; arguments?: unknown[] };
+}
+
+export interface LspInlayHint {
+  position: LspPosition;
+  label: string | Array<{ value: string; tooltip?: string }>;
+  kind?: 1 | 2; // 1=Type, 2=Parameter
+  paddingLeft?: boolean;
+  paddingRight?: boolean;
+}
+
 // ── Notification handler type ─────────────────────────────────────────────────
 
 export type LspNotificationHandler = (method: string, params: unknown) => void;
@@ -210,6 +239,24 @@ class LspClient {
             },
             hover: { contentFormat: ["markdown", "plaintext"] },
             definition: {},
+            references: {},
+            rename: { prepareSupport: true },
+            codeAction: {
+              codeActionLiteralSupport: {
+                codeActionKind: {
+                  valueSet: [
+                    "quickfix",
+                    "refactor",
+                    "refactor.extract",
+                    "refactor.inline",
+                    "refactor.rewrite",
+                    "source",
+                    "source.organizeImports",
+                  ],
+                },
+              },
+            },
+            formatting: {},
             signatureHelp: {
               signatureInformation: {
                 documentationFormat: ["markdown", "plaintext"],
@@ -217,6 +264,10 @@ class LspClient {
               },
             },
             publishDiagnostics: { relatedInformation: false },
+            documentSymbol: {
+              hierarchicalDocumentSymbolSupport: true,
+            },
+            inlayHint: {},
           },
         },
         initializationOptions: null,
@@ -364,6 +415,109 @@ class LspClient {
         context: { triggerKind: 1 },
       },
     });
+  }
+
+  async getReferences(
+    uri: string,
+    line: number,
+    character: number
+  ): Promise<LspLocation[]> {
+    if (!this._isReady || !this._openDocuments.has(uri)) return [];
+
+    const result = await invoke<LspLocation[] | null>("lsp_send_request", {
+      method: "textDocument/references",
+      params: {
+        textDocument: { uri },
+        position: { line, character },
+        context: { includeDeclaration: true },
+      },
+    });
+    return result ?? [];
+  }
+
+  async rename(
+    uri: string,
+    line: number,
+    character: number,
+    newName: string
+  ): Promise<LspWorkspaceEdit | null> {
+    if (!this._isReady || !this._openDocuments.has(uri)) return null;
+
+    return invoke<LspWorkspaceEdit | null>("lsp_send_request", {
+      method: "textDocument/rename",
+      params: {
+        textDocument: { uri },
+        position: { line, character },
+        newName,
+      },
+    });
+  }
+
+  async prepareRename(
+    uri: string,
+    line: number,
+    character: number
+  ): Promise<LspRange | null> {
+    if (!this._isReady || !this._openDocuments.has(uri)) return null;
+
+    return invoke<LspRange | null>("lsp_send_request", {
+      method: "textDocument/prepareRename",
+      params: {
+        textDocument: { uri },
+        position: { line, character },
+      },
+    });
+  }
+
+  async getCodeActions(
+    uri: string,
+    range: LspRange,
+    diagnostics: LspDiagnostic[]
+  ): Promise<LspCodeAction[]> {
+    if (!this._isReady || !this._openDocuments.has(uri)) return [];
+
+    const result = await invoke<LspCodeAction[] | null>("lsp_send_request", {
+      method: "textDocument/codeAction",
+      params: {
+        textDocument: { uri },
+        range,
+        context: { diagnostics },
+      },
+    });
+    return result ?? [];
+  }
+
+  async formatting(
+    uri: string,
+    tabSize: number,
+    insertSpaces: boolean
+  ): Promise<LspTextEdit[]> {
+    if (!this._isReady || !this._openDocuments.has(uri)) return [];
+
+    const result = await invoke<LspTextEdit[] | null>("lsp_send_request", {
+      method: "textDocument/formatting",
+      params: {
+        textDocument: { uri },
+        options: { tabSize, insertSpaces },
+      },
+    });
+    return result ?? [];
+  }
+
+  async getInlayHints(
+    uri: string,
+    range: LspRange
+  ): Promise<LspInlayHint[]> {
+    if (!this._isReady || !this._openDocuments.has(uri)) return [];
+
+    const result = await invoke<LspInlayHint[] | null>("lsp_send_request", {
+      method: "textDocument/inlayHint",
+      params: {
+        textDocument: { uri },
+        range,
+      },
+    });
+    return result ?? [];
   }
 
   async getWorkspaceSymbols(query: string): Promise<any[] | null> {

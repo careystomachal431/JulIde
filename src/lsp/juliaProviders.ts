@@ -1,5 +1,5 @@
 import type * as Monaco from "monaco-editor";
-import type { LspDiagnostic } from "./LspClient";
+import type { LspDiagnostic, LspWorkspaceEdit } from "./LspClient";
 import { lspClient } from "./LspClient";
 
 // ── Module-level singletons ───────────────────────────────────────────────────
@@ -228,6 +228,188 @@ export function registerJuliaLspProviders(monaco: typeof Monaco): void {
       }
     },
   });
+
+  // ── Find References ───────────────────────────────────────────────────────
+  monaco.languages.registerReferenceProvider("julia", {
+    provideReferences: async (model, position) => {
+      const uri = `file://${model.uri.path}`;
+      try {
+        const locations = await lspClient.getReferences(
+          uri,
+          position.lineNumber - 1,
+          position.column - 1
+        );
+        return locations.map((loc) => ({
+          uri: monaco.Uri.parse(loc.uri),
+          range: lspRangeToMonaco(loc.range),
+        }));
+      } catch {
+        return [];
+      }
+    },
+  });
+
+  // ── Rename Symbol ─────────────────────────────────────────────────────────
+  monaco.languages.registerRenameProvider("julia", {
+    provideRenameEdits: async (model, position, newName) => {
+      const uri = `file://${model.uri.path}`;
+      try {
+        const edit = await lspClient.rename(
+          uri,
+          position.lineNumber - 1,
+          position.column - 1,
+          newName
+        );
+        if (!edit) return { edits: [] };
+        return workspaceEditToMonaco(monaco, edit);
+      } catch {
+        return { edits: [] };
+      }
+    },
+    resolveRenameLocation: async (model, position) => {
+      const uri = `file://${model.uri.path}`;
+      try {
+        const range = await lspClient.prepareRename(
+          uri,
+          position.lineNumber - 1,
+          position.column - 1
+        );
+        if (!range) return { range: { startLineNumber: 0, startColumn: 0, endLineNumber: 0, endColumn: 0 }, text: "" };
+        const monacoRange = lspRangeToMonaco(range);
+        const text = model.getValueInRange(monacoRange);
+        return { range: monacoRange, text };
+      } catch {
+        return { range: { startLineNumber: 0, startColumn: 0, endLineNumber: 0, endColumn: 0 }, text: "" };
+      }
+    },
+  });
+
+  // ── Code Actions / Quick Fixes ────────────────────────────────────────────
+  monaco.languages.registerCodeActionProvider("julia", {
+    provideCodeActions: async (model, range, context) => {
+      const uri = `file://${model.uri.path}`;
+      try {
+        const lspRange = {
+          start: { line: range.startLineNumber - 1, character: range.startColumn - 1 },
+          end: { line: range.endLineNumber - 1, character: range.endColumn - 1 },
+        };
+        const diagnostics = (context.markers ?? []).map((m) => ({
+          range: {
+            start: { line: m.startLineNumber - 1, character: m.startColumn - 1 },
+            end: { line: m.endLineNumber - 1, character: m.endColumn - 1 },
+          },
+          severity: m.severity === monaco.MarkerSeverity.Error ? 1
+            : m.severity === monaco.MarkerSeverity.Warning ? 2
+            : m.severity === monaco.MarkerSeverity.Info ? 3 : 4 as 1 | 2 | 3 | 4,
+          message: m.message,
+          source: m.source ?? undefined,
+        }));
+        const actions = await lspClient.getCodeActions(uri, lspRange, diagnostics);
+        return {
+          actions: actions.map((action) => ({
+            title: action.title,
+            kind: action.kind ?? "quickfix",
+            edit: action.edit ? workspaceEditToMonaco(monaco, action.edit) : undefined,
+          })),
+          dispose: () => {},
+        };
+      } catch {
+        return { actions: [], dispose: () => {} };
+      }
+    },
+  });
+
+  // ── Document Formatting ───────────────────────────────────────────────────
+  monaco.languages.registerDocumentFormattingEditProvider("julia", {
+    provideDocumentFormattingEdits: async (model) => {
+      const uri = `file://${model.uri.path}`;
+      try {
+        const edits = await lspClient.formatting(uri, 4, true);
+        return edits.map((edit) => ({
+          range: lspRangeToMonaco(edit.range),
+          text: edit.newText,
+        }));
+      } catch {
+        return [];
+      }
+    },
+  });
+
+  // ── Inlay Hints ───────────────────────────────────────────────────────────
+  monaco.languages.registerInlayHintsProvider("julia", {
+    provideInlayHints: async (model, range) => {
+      const uri = `file://${model.uri.path}`;
+      try {
+        const lspRange = {
+          start: { line: range.startLineNumber - 1, character: range.startColumn - 1 },
+          end: { line: range.endLineNumber - 1, character: range.endColumn - 1 },
+        };
+        const hints = await lspClient.getInlayHints(uri, lspRange);
+        return {
+          hints: hints.map((h) => ({
+            kind: h.kind === 1
+              ? monaco.languages.InlayHintKind.Type
+              : h.kind === 2
+              ? monaco.languages.InlayHintKind.Parameter
+              : monaco.languages.InlayHintKind.Type,
+            position: {
+              lineNumber: h.position.line + 1,
+              column: h.position.character + 1,
+            },
+            label: typeof h.label === "string"
+              ? h.label
+              : h.label.map((part) => part.value).join(""),
+            paddingLeft: h.paddingLeft,
+            paddingRight: h.paddingRight,
+          })),
+          dispose: () => {},
+        };
+      } catch {
+        return { hints: [], dispose: () => {} };
+      }
+    },
+  });
+}
+
+// ── Workspace edit conversion helper ──────────────────────────────────────────
+
+function workspaceEditToMonaco(
+  monaco: typeof Monaco,
+  edit: LspWorkspaceEdit
+): Monaco.languages.WorkspaceEdit {
+  const edits: Monaco.languages.IWorkspaceTextEdit[] = [];
+
+  if (edit.changes) {
+    for (const [uri, textEdits] of Object.entries(edit.changes)) {
+      for (const te of textEdits) {
+        edits.push({
+          resource: monaco.Uri.parse(uri),
+          textEdit: {
+            range: lspRangeToMonaco(te.range),
+            text: te.newText,
+          },
+          versionId: undefined,
+        });
+      }
+    }
+  }
+
+  if (edit.documentChanges) {
+    for (const dc of edit.documentChanges) {
+      for (const te of dc.edits) {
+        edits.push({
+          resource: monaco.Uri.parse(dc.textDocument.uri),
+          textEdit: {
+            range: lspRangeToMonaco(te.range),
+            text: te.newText,
+          },
+          versionId: undefined,
+        });
+      }
+    }
+  }
+
+  return { edits };
 }
 
 /**

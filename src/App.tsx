@@ -249,6 +249,14 @@ export default function App() {
         e.preventDefault();
         setActiveSidebarView("search");
       }
+      // Cmd/Ctrl+G for Go to Line
+      if ((e.ctrlKey || e.metaKey) && e.key === "g") {
+        e.preventDefault();
+        const editor = useIdeStore.getState().editorInstance;
+        if (editor) {
+          editor.getAction("editor.action.gotoLine")?.run();
+        }
+      }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);

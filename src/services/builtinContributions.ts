@@ -59,6 +59,11 @@ async function getComponent(name: string): Promise<React.ComponentType> {
       _componentCache[name] = m.ContainerLogsPanel;
       return m.ContainerLogsPanel;
     }
+    case "OutlinePanel": {
+      const m = await import("../components/Outline/OutlinePanel");
+      _componentCache[name] = m.OutlinePanel;
+      return m.OutlinePanel;
+    }
     default:
       throw new Error(`Unknown component: ${name}`);
   }
@@ -78,11 +83,13 @@ export async function registerBuiltinContributions() {
     SearchPanel,
     GitPanel,
     ContainerPanel,
+    OutlinePanel,
   ] = await Promise.all([
     getComponent("FileExplorer"),
     getComponent("SearchPanel"),
     getComponent("GitPanel"),
     getComponent("ContainerPanel"),
+    getComponent("OutlinePanel"),
   ]);
 
   store.registerSidebarPanel({
@@ -112,6 +119,13 @@ export async function registerBuiltinContributions() {
     icon: "Container",
     order: 40,
     component: ContainerPanel,
+  });
+  store.registerSidebarPanel({
+    id: "outline",
+    label: "Outline",
+    icon: "List",
+    order: 15,
+    component: OutlinePanel,
   });
 
   // ─── Bottom Panels ──────────────────────────────────────────────────────────
@@ -468,5 +482,24 @@ function registerBuiltinCommands() {
     id: "git.panel",
     label: "Git: Show Source Control",
     execute: () => ide().setActiveSidebarView("git"),
+  });
+
+  store.registerCommand({
+    id: "editor.go-to-line",
+    label: "Go to Line",
+    shortcut: "⌘G",
+    execute: () => ide().editorInstance?.getAction("editor.action.gotoLine")?.run(),
+  });
+
+  store.registerCommand({
+    id: "editor.format-document",
+    label: "Format Document",
+    execute: () => ide().editorInstance?.getAction("editor.action.formatDocument")?.run(),
+  });
+
+  store.registerCommand({
+    id: "outline.show",
+    label: "Show Outline",
+    execute: () => ide().setActiveSidebarView("outline"),
   });
 }
