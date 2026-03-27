@@ -760,19 +760,58 @@ BestieTemplate.generate(dst, data; defaults=true, quiet=false)"#;
     // Start with a clean environment to avoid Tauri/Cargo vars
     // breaking pixi/CondaPkg.
     cmd.env_clear();
-    if let Ok(home) = std::env::var("HOME") {
-        cmd.env("HOME", &home);
-    }
-    cmd.env("TERM", "xterm-256color");
-    // Get a clean PATH from the user's login shell
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
-    if let Ok(output) = std::process::Command::new(&shell)
-        .args(["-l", "-c", "echo $PATH"])
-        .output()
+
+    #[cfg(unix)]
     {
-        if output.status.success() {
-            let path_val = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            cmd.env("PATH", &path_val);
+        if let Ok(home) = std::env::var("HOME") {
+            cmd.env("HOME", &home);
+        }
+        cmd.env("TERM", "xterm-256color");
+        // Get a clean PATH from the user's login shell
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
+        if let Ok(output) = std::process::Command::new(&shell)
+            .args(["-l", "-c", "echo $PATH"])
+            .output()
+        {
+            if output.status.success() {
+                let path_val = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                cmd.env("PATH", &path_val);
+            }
+        }
+    }
+
+    #[cfg(windows)]
+    {
+        // On Windows, forward essential system variables from the parent
+        // process.  Without TEMP/TMP Julia and pixi write temp files to
+        // C:\WINDOWS which requires admin privileges.
+        const WINDOWS_ESSENTIAL_VARS: &[&str] = &[
+            "TEMP",
+            "TMP",
+            "USERPROFILE",
+            "HOMEDRIVE",
+            "HOMEPATH",
+            "HOME",
+            "APPDATA",
+            "LOCALAPPDATA",
+            "PROGRAMDATA",
+            "SystemRoot",
+            "windir",
+            "SystemDrive",
+            "ProgramFiles",
+            "ProgramFiles(x86)",
+            "CommonProgramFiles",
+            "CommonProgramFiles(x86)",
+            "PATH",
+            "COMPUTERNAME",
+            "OS",
+            "NUMBER_OF_PROCESSORS",
+            "PROCESSOR_ARCHITECTURE",
+        ];
+        for var_name in WINDOWS_ESSENTIAL_VARS {
+            if let Ok(val) = std::env::var(var_name) {
+                cmd.env(var_name, &val);
+            }
         }
     }
     cmd.env("JULIDE_PKG_NAME", &package_name);
